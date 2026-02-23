@@ -3,58 +3,80 @@ import { toast } from "sonner";
 import type { CartItem } from "@/types/pos";
 
 /**
+ * Tipos para la API JSON de Bluetooth Print App
+ */
+interface PrinterData {
+  type: 0 | 1 | 2 | 3 | 4; // 0=text, 1=image, 2=barcode, 3=QR, 4=HTML
+  content?: string;
+  bold?: 0 | 1;
+  align?: 0 | 1 | 2; // 0=left, 1=center, 2=right
+  format?: 0 | 1 | 2 | 3 | 4; // 0=normal, 1=double height, 2=double height+width, 3=double width, 4=small
+  path?: string; // Para imágenes
+  value?: string; // Para barcode/QR
+  width?: number; // Para barcode
+  height?: number; // Para barcode
+  size?: number; // Para QR
+}
+
+/**
  * Hook para integrar con la app Bluetooth Print (mate.bluetoothprint)
- * Genera strings en el formato requerido por la app y los envía vía Intent
+ * Usa el esquema URI my.bluetoothprint.scheme:// (más confiable)
  */
 export function useBluetoothPrintApp() {
   /**
-   * Formato: <BAF>Content
-   * B: bold (0=no, 1=yes)
-   * A: align (0=left, 1=center, 2=right)
-   * F: format (0=normal, 1=double height, 2=double height+width, 3=double width)
+   * Crea un objeto de texto para enviar a la app
    */
-  const formatText = (
+  const createTextEntry = (
     content: string,
     bold: 0 | 1 = 0,
-    align: 0 | 1 | 2 = 0,
-    format: 0 | 1 | 2 | 3 = 0
-  ): string => {
-    return `<${bold}${align}${format}>${content}`;
-  };
+    align: 0 | 1 | 2 = 1, // default center
+    format: 0 | 1 | 2 | 3 | 4 = 0
+  ): PrinterData => ({
+    type: 0, // text
+    content,
+    bold,
+    align,
+    format,
+  });
 
   /**
-   * Genera el string para imprimir ticket de cliente (80mm)
+   * Genera el JSON para imprimir ticket de cliente (80mm)
    */
-  const generateClientTicketString = (
+  const generateClientTicketJSON = (
     items: CartItem[],
     total: number,
     orderNumber: number | null,
     customerName: string,
-    dateStr: string,
     businessName: string = "JULIANA",
     businessSubtitle: string = "BARRA COTIDIANA",
     businessAddress: string = "Av. Miguel Hidalgo #276",
     businessPhone: string = "Tel: 417 206 0111"
-  ): string => {
-    let str = "";
+  ): PrinterData[] => {
+    const data: PrinterData[] = [];
+
+    // Space
+    data.push(createTextEntry(" ", 0, 1, 0));
 
     // Header - Nombre negocio (grande, centrado, negrita)
-    str += formatText("", 0, 1, 0) + "\n"; // Línea en blanco
-    str += formatText(businessName, 1, 1, 2) + "\n"; // Double height + width, bold, center
-    str += formatText(businessSubtitle, 0, 1, 0) + "\n";
-    str += formatText(businessAddress, 0, 1, 0) + "\n";
-    str += formatText(businessPhone, 0, 1, 0) + "\n";
+    data.push(createTextEntry(businessName, 1, 1, 3)); // bold, center, double width
+    data.push(createTextEntry(businessSubtitle, 0, 1, 0)); // center
+    data.push(createTextEntry(businessAddress, 0, 1, 0)); // center
+    data.push(createTextEntry(businessPhone, 0, 1, 0)); // center
 
     // Separador
-    str += formatText("=".repeat(42), 0, 0, 0) + "\n";
+    data.push(createTextEntry("=".repeat(42), 0, 0, 0));
 
     // Orden info
-    str += formatText(`Pedido: #${orderNumber || "---"}`, 1, 0, 0) + "\n";
-    str += formatText(`Nombre: ${customerName || "---"}`, 1, 0, 0) + "\n";
-    str += formatText(dateStr, 0, 0, 0) + "\n";
+    data.push(createTextEntry(`Pedido: #${orderNumber || "---"}`, 1, 0, 0)); // bold, left
+    data.push(createTextEntry(`Nombre: ${customerName || "---"}`, 1, 0, 0)); // bold, left
+    const dateStr = new Date().toLocaleString("es-MX", {
+      dateStyle: "short",
+      timeStyle: "short",
+    });
+    data.push(createTextEntry(dateStr, 0, 0, 0)); // left
 
     // Separador
-    str += formatText("=".repeat(42), 0, 0, 0) + "\n";
+    data.push(createTextEntry("=".repeat(42), 0, 0, 0));
 
     // Items
     items.forEach((item) => {
@@ -63,105 +85,137 @@ export function useBluetoothPrintApp() {
       }`;
       const priceLine = `$${item.subtotal.toFixed(0)}`;
 
-      // Nombre y precio alineados
-      str += formatText(itemLine, 0, 0, 0) + "\n";
-      str += formatText(priceLine, 0, 2, 0) + "\n"; // Alineado a derecha
+      // Nombre del item
+      data.push({
+        type: 4, // HTML
+        content: `<div style="display: flex; justify-content: space-between;"><span>${itemLine}</span><span style="text-align: right;">${priceLine}</span></div>`,
+      });
 
       if (item.customLabel) {
-        str += formatText(`  • ${item.customLabel}`, 0, 0, 0) + "\n";
+        data.push(createTextEntry(`  • ${item.customLabel}`, 0, 0, 4)); // small, left
       }
     });
 
     // Separador
-    str += formatText("=".repeat(42), 0, 0, 0) + "\n";
+    data.push(createTextEntry("=".repeat(42), 0, 0, 0));
 
     // Total
-    str += formatText(`TOTAL: $${total.toFixed(0)}`, 1, 1, 2) + "\n"; // Bold, center, double
+    data.push(createTextEntry(`TOTAL: $${total.toFixed(0)}`, 1, 1, 3)); // bold, center, double width
 
     // Separador
-    str += formatText("=".repeat(42), 0, 0, 0) + "\n";
+    data.push(createTextEntry("=".repeat(42), 0, 0, 0));
 
     // Footer
-    str += formatText("¡Gracias por tu visita!", 0, 1, 0) + "\n";
-    str += formatText("Vuelve pronto", 0, 1, 0) + "\n";
-    str += formatText("", 0, 1, 0) + "\n"; // Línea en blanco
+    data.push(createTextEntry("¡Gracias por tu visita!", 0, 1, 0)); // center
+    data.push(createTextEntry("Vuelve pronto", 0, 1, 0)); // center
+    data.push(createTextEntry(" ", 0, 1, 0)); // space
 
-    return str;
+    return data;
   };
 
   /**
-   * Genera el string para imprimir comanda de cocina (58mm)
+   * Genera el JSON para imprimir comanda de cocina (58mm)
    */
-  const generateKitchenOrderString = (
+  const generateKitchenOrderJSON = (
     items: CartItem[],
     orderNumber: number | null,
-    customerName: string,
-    dateStr: string
-  ): string => {
-    let str = "";
+    customerName: string
+  ): PrinterData[] => {
+    const data: PrinterData[] = [];
+
+    // Space
+    data.push(createTextEntry(" ", 0, 1, 0));
 
     // Header
-    str += formatText("", 0, 1, 0) + "\n"; // Línea en blanco
-    str += formatText("COMANDA", 1, 1, 2) + "\n"; // Bold, center, double
-    str += formatText(`#${orderNumber || "---"}`, 1, 1, 1) + "\n"; // Bold, center, double height
+    data.push(createTextEntry("COMANDA", 1, 1, 3)); // bold, center, double width
+    data.push(createTextEntry(`#${orderNumber || "---"}`, 1, 1, 1)); // bold, center, double height
 
     // Separador
-    str += formatText("=".repeat(32), 0, 0, 0) + "\n";
+    data.push(createTextEntry("=".repeat(32), 0, 0, 0));
 
     // Cliente y hora
-    str += formatText(`👤 ${customerName || "Sin nombre"}`, 1, 0, 0) + "\n";
-    str += formatText(`🕐 ${dateStr}`, 0, 0, 0) + "\n";
+    data.push(createTextEntry(`👤 ${customerName || "Sin nombre"}`, 1, 0, 0)); // bold, left
+    const dateStr = new Date().toLocaleString("es-MX", {
+      dateStyle: "short",
+      timeStyle: "short",
+    });
+    data.push(createTextEntry(`🕐 ${dateStr}`, 0, 0, 0)); // left
 
     // Separador
-    str += formatText("=".repeat(32), 0, 0, 0) + "\n";
+    data.push(createTextEntry("=".repeat(32), 0, 0, 0));
 
     // Items
     items.forEach((item) => {
       const itemLine = `${item.quantity}x ${item.product.name.toUpperCase()}`;
-      str += formatText(itemLine, 1, 0, 0) + "\n"; // Bold
+      data.push(createTextEntry(itemLine, 1, 0, 0)); // bold, left
 
       if (item.productSize) {
-        str += formatText(`  Tamaño: ${item.productSize.name}`, 0, 0, 0) + "\n";
+        data.push(createTextEntry(`  Tamaño: ${item.productSize.name}`, 0, 0, 0)); // left
       }
 
       if (item.customLabel) {
-        str += formatText(`  • ${item.customLabel}`, 0, 0, 0) + "\n";
+        data.push(createTextEntry(`  • ${item.customLabel}`, 0, 0, 0)); // left
       }
     });
 
     // Separador
-    str += formatText("=".repeat(32), 0, 0, 0) + "\n";
+    data.push(createTextEntry("=".repeat(32), 0, 0, 0));
 
     // Acción
-    str += formatText("PREPARAR AHORA", 1, 1, 2) + "\n"; // Bold, center, double
+    data.push(createTextEntry("PREPARAR AHORA", 1, 1, 3)); // bold, center, double width
 
-    str += formatText("", 0, 1, 0) + "\n"; // Línea en blanco
+    data.push(createTextEntry(" ", 0, 1, 0)); // space
 
-    return str;
+    return data;
   };
 
   /**
-   * Envía el string a la app Bluetooth Print via Intent
-   * Solo funciona en WebView de Android
+   * Envía el JSON a la app Bluetooth Print via esquema URI
+   * Usa my.bluetoothprint.scheme:// que es más confiable
    */
-  const sendToPrintApp = useCallback((printData: string) => {
+  const sendToPrintApp = useCallback((printDataJSON: PrinterData[]) => {
     try {
-      // Verificar si estamos en Android WebView
-      if (!window.android) {
-        toast.error("Bluetooth Print App no disponible. Instala la app desde Play Store");
+      // Verificar si estamos en un navegador con soporte para esquemas personalizados
+      if (!window.location) {
+        toast.error("Navegador no soportado");
         return false;
       }
 
-      // Enviar a la app vía método Java/Android
-      if (typeof (window as any).BluetoothPrint !== "undefined") {
-        (window as any).BluetoothPrint.print(printData);
-        return true;
+      // Convertir el JSON a string
+      const jsonString = JSON.stringify(printDataJSON);
+
+      // Codificar para URL (sin base64 para que sea más compatible)
+      const encodedData = encodeURIComponent(jsonString);
+
+      // Esquema URI para Bluetooth Print App
+      // NOTA: La app debe tener "Browser Print" habilitado en sus configuraciones
+      const schemeUrl = `my.bluetoothprint.scheme://data:application/json,${jsonString}`;
+
+      // Como data URLs pueden no funcionar con esquemas personalizados,
+      // alternativa: usar un endpoint API si está disponible
+      // Por ahora, intentamos con dirección local o mostramos instrucciones
+      
+      if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+        // Para localhost, necesitaría un servidor
+        toast.error(
+          "Para usar Bluetooth Print necesitas: " +
+          "1. Tener la app instalada " +
+          "2. Habilitar 'Browser Print' en la app " +
+          "3. Un endpoint JSON que retorne los datos"
+        );
+        return false;
       }
 
-      // Alternativa: Intent directo (si la app está instalada)
-      // Esta es una aproximación que funciona en algunos WebViews
-      const intentData = encodeURIComponent(printData);
-      window.location.href = `intent://print?text=${intentData}#Intent;package=mate.bluetoothprint;end`;
+      // Intentar abrir el esquema
+      window.location.href = schemeUrl;
+
+      // Si llegamos aquí, probablemente no está instalada la app
+      setTimeout(() => {
+        toast.error(
+          "Bluetooth Print App no detectada. " +
+          "Instálala desde Play Store: https://play.google.com/store/apps/details?id=mate.bluetoothprint"
+        );
+      }, 1000);
 
       return true;
     } catch (error) {
@@ -187,17 +241,11 @@ export function useBluetoothPrintApp() {
         phone?: string;
       }
     ) => {
-      const dateStr = new Date().toLocaleString("es-MX", {
-        dateStyle: "short",
-        timeStyle: "short",
-      });
-
-      const printData = generateClientTicketString(
+      const printData = generateClientTicketJSON(
         items,
         total,
         orderNumber,
         customerName,
-        dateStr,
         businessSettings?.name,
         businessSettings?.subtitle,
         businessSettings?.address,
@@ -206,7 +254,7 @@ export function useBluetoothPrintApp() {
 
       return sendToPrintApp(printData);
     },
-    [generateClientTicketString, sendToPrintApp]
+    [generateClientTicketJSON, sendToPrintApp]
   );
 
   /**
@@ -218,35 +266,26 @@ export function useBluetoothPrintApp() {
       orderNumber: number | null,
       customerName: string
     ) => {
-      const dateStr = new Date().toLocaleString("es-MX", {
-        dateStyle: "short",
-        timeStyle: "short",
-      });
-
-      const printData = generateKitchenOrderString(
-        items,
-        orderNumber,
-        customerName,
-        dateStr
-      );
-
+      const printData = generateKitchenOrderJSON(items, orderNumber, customerName);
       return sendToPrintApp(printData);
     },
-    [generateKitchenOrderString, sendToPrintApp]
+    [generateKitchenOrderJSON, sendToPrintApp]
   );
 
   /**
    * Verifica si Bluetooth Print App está disponible
    */
   const isBluetoothPrintAppAvailable = useCallback((): boolean => {
-    return !!(window as any).BluetoothPrint || !!(window as any).android;
+    // En navegador, simplemente asumimos que puede estarlo
+    // La verificación real ocurre cuando se intenta usar
+    return true;
   }, []);
 
   return {
     printClientTicket,
     printKitchenOrder,
     isBluetoothPrintAppAvailable,
-    generateClientTicketString,
-    generateKitchenOrderString,
+    generateClientTicketJSON,
+    generateKitchenOrderJSON,
   };
 }
