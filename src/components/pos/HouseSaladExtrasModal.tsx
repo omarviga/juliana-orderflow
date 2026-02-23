@@ -9,6 +9,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Ingredient, Product, SelectedIngredient } from "@/types/pos";
+import {
+  isAllowedSaladProtein,
+  isAllowedSaladTopping,
+  isPremiumProteinIngredient,
+  isPremiumToppingIngredient,
+} from "@/lib/salad-rules";
 import { Check } from "lucide-react";
 
 interface Props {
@@ -26,6 +32,8 @@ interface Props {
 
 const EXTRA_PRICES = {
   topping: 10,
+  toppingPremium: 15,
+  crocante: 10,
   proteina: 20,
   proteinaPremium: 25,
   aderezo: 15,
@@ -40,9 +48,13 @@ export function HouseSaladExtrasModal({
 }: Props) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const toppings = ingredients.filter((i) => i.type === "topping" && !i.is_premium);
-  const proteins = ingredients.filter((i) => i.type === "proteina" && !i.is_premium);
-  const premiumProteins = ingredients.filter((i) => i.type === "proteina" && i.is_premium);
+  const saladToppings = ingredients.filter(isAllowedSaladTopping);
+  const toppings = saladToppings.filter((i) => !isPremiumToppingIngredient(i));
+  const premiumToppings = saladToppings.filter((i) => isPremiumToppingIngredient(i));
+  const crocantes = ingredients.filter((i) => i.type === "crocante");
+  const saladProteins = ingredients.filter(isAllowedSaladProtein);
+  const proteins = saladProteins.filter((i) => !isPremiumProteinIngredient(i));
+  const premiumProteins = saladProteins.filter((i) => isPremiumProteinIngredient(i));
   const dressings = ingredients.filter((i) => i.type === "aderezo");
 
   const selectedIngredients = useMemo(
@@ -52,10 +64,13 @@ export function HouseSaladExtrasModal({
 
   const total = useMemo(() => {
     return selectedIngredients.reduce((sum, ingredient) => {
-      if (ingredient.type === "topping") return sum + EXTRA_PRICES.topping;
+      if (ingredient.type === "topping") {
+        return sum + (isPremiumToppingIngredient(ingredient) ? EXTRA_PRICES.toppingPremium : EXTRA_PRICES.topping);
+      }
+      if (ingredient.type === "crocante") return sum + EXTRA_PRICES.crocante;
       if (ingredient.type === "aderezo") return sum + EXTRA_PRICES.aderezo;
       if (ingredient.type === "proteina") {
-        return sum + (ingredient.is_premium ? EXTRA_PRICES.proteinaPremium : EXTRA_PRICES.proteina);
+        return sum + (isPremiumProteinIngredient(ingredient) ? EXTRA_PRICES.proteinaPremium : EXTRA_PRICES.proteina);
       }
       return sum;
     }, product.price || 0);
@@ -78,10 +93,13 @@ export function HouseSaladExtrasModal({
     const customizations: SelectedIngredient[] = selectedIngredients.map((ingredient) => {
       let extraCost = 0;
 
-      if (ingredient.type === "topping") extraCost = EXTRA_PRICES.topping;
+      if (ingredient.type === "topping") {
+        extraCost = isPremiumToppingIngredient(ingredient) ? EXTRA_PRICES.toppingPremium : EXTRA_PRICES.topping;
+      }
+      if (ingredient.type === "crocante") extraCost = EXTRA_PRICES.crocante;
       if (ingredient.type === "aderezo") extraCost = EXTRA_PRICES.aderezo;
       if (ingredient.type === "proteina") {
-        extraCost = ingredient.is_premium ? EXTRA_PRICES.proteinaPremium : EXTRA_PRICES.proteina;
+        extraCost = isPremiumProteinIngredient(ingredient) ? EXTRA_PRICES.proteinaPremium : EXTRA_PRICES.proteina;
       }
 
       return { ingredient, extraCost };
@@ -98,6 +116,8 @@ export function HouseSaladExtrasModal({
 
   const ingredientGroups = [
     { title: "Toppings (+$10)", items: toppings },
+    { title: "Topping Premium (+$15)", items: premiumToppings },
+    { title: "Crocantes (+$10)", items: crocantes },
     { title: "Proteína (+$20)", items: proteins },
     { title: "Proteína Premium (+$25)", items: premiumProteins },
     { title: "Aderezo / Vinagreta (+$15)", items: dressings },
