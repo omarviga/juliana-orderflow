@@ -220,15 +220,15 @@ export async function printToDevice(
       if (pairedDevices) {
         // Android - intenta usar dispositivo por su dirección/ID
         device = await navigator.bluetooth.requestDevice({
-          filters: [{ services: ["1101"] }], // Bluetooth Serial Port Profile
+          filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }], // Bluetooth Serial Port Profile
           acceptAllDevices: false,
         });
       }
     } catch (e) {
       // No se pudo obtener por dirección, solicita al usuario
       device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: ["1101"] }],
-        optionalServices: ["1101", "180a"], // Device Information
+        filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }],
+        optionalServices: ["00001101-0000-1000-8000-00805f9b34fb", "0000180a-0000-1000-8000-00805f9b34fb"], // Device Information
         acceptAllDevices: false,
       });
     }
@@ -248,7 +248,7 @@ export async function printToDevice(
     console.log("Conectado a GATT server");
 
     // Obtener servicio Serial Port Profile (UUID estándar para impresoras)
-    const service = await server.getPrimaryService("1101");
+    const service = await server.getPrimaryService("00001101-0000-1000-8000-00805f9b34fb");
 
     // Obtener característica de escritura (hay diferentes en diferentes impresoras)
     let characteristic;

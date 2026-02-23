@@ -61,8 +61,8 @@ export function useBluetootPrinter() {
       toast.loading("Buscando impresoras...");
 
       const device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: ["1101"] }],
-        optionalServices: ["1101", "180a"],
+        filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }],
+        optionalServices: ["00001101-0000-1000-8000-00805f9b34fb", "0000180a-0000-1000-8000-00805f9b34fb"],
       });
 
       if (!device) return false;
@@ -108,8 +108,8 @@ export function useBluetootPrinter() {
       toast.loading("Buscando impresoras...");
 
       const device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: ["1101"] }],
-        optionalServices: ["1101", "180a"],
+        filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }],
+        optionalServices: ["00001101-0000-1000-8000-00805f9b34fb", "0000180a-0000-1000-8000-00805f9b34fb"],
       });
 
       if (!device) return false;
