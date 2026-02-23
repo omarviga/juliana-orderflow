@@ -4,6 +4,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import type { CartItem } from "@/types/pos";
@@ -30,6 +31,34 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
 
   const printer = useBluetootPrinter();
   const printApp = useBluetoothPrintApp();
+
+  const printWithWebFallback = async (
+    type: "cliente" | "cocina",
+    orderNumber: number | null,
+    orderCustomerName: string
+  ) => {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("es-MX", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    if (type === "cliente") {
+      await printer.printClientTicket(
+        items,
+        total,
+        orderNumber,
+        orderCustomerName,
+        dateStr
+      );
+      return;
+    }
+
+    await printer.printKitchenOrder(items, orderNumber, orderCustomerName, dateStr);
+  };
 
   const handlePay = async () => {
     if (!customerName.trim()) {
@@ -85,35 +114,30 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
         setIsAutoPrinting(true);
         try {
           // Intentar con Bluetooth Print App primero (más confiable)
-          if (printApp.isBluetoothPrintAppAvailable()) {
-            printApp.printKitchenOrder(items, order.order_number, customerName.trim());
-            // Pequeño delay para que no se sobrecarque
-            await new Promise((resolve) => setTimeout(resolve, 500));
-            printApp.printClientTicket(items, total, order.order_number, customerName.trim());
-          } else {
-            // Fallback a Web Bluetooth
-            const now = new Date();
-            const dateStr = now.toLocaleDateString("es-MX", {
-              day: "2-digit",
-              month: "2-digit",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            });
+          let printedWithApp = false;
 
-            await printer.printKitchenOrder(
+          if (printApp.isBluetoothPrintAppAvailable()) {
+            const kitchenPrinted = await printApp.printKitchenOrder(
               items,
               order.order_number,
-              customerName.trim(),
-              dateStr
+              customerName.trim()
             );
-            await printer.printClientTicket(
-              items,
-              total,
-              order.order_number,
-              customerName.trim(),
-              dateStr
-            );
+
+            if (kitchenPrinted) {
+              await new Promise((resolve) => setTimeout(resolve, 500));
+              const clientPrinted = await printApp.printClientTicket(
+                items,
+                total,
+                order.order_number,
+                customerName.trim()
+              );
+              printedWithApp = clientPrinted;
+            }
+          }
+
+          if (!printedWithApp) {
+            await printWithWebFallback("cocina", order.order_number, customerName.trim());
+            await printWithWebFallback("cliente", order.order_number, customerName.trim());
           }
         } catch (err) {
           console.error("Error en impresión automática:", err);
@@ -122,8 +146,9 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
           setIsAutoPrinting(false);
         }
       }
-    } catch (err: any) {
-      toast.error("Error al guardar: " + err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Error desconocido";
+      toast.error("Error al guardar: " + message);
     } finally {
       setSaving(false);
     }
@@ -133,39 +158,17 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
     setIsAutoPrinting(true);
     try {
       // Intentar con Bluetooth Print App primero (más confiable)
-      if (printApp.isBluetoothPrintAppAvailable()) {
-        if (type === "cliente") {
-          printApp.printClientTicket(items, total, savedOrderNumber, customerName);
-        } else {
-          printApp.printKitchenOrder(items, savedOrderNumber, customerName);
-        }
-      } else {
-        // Fallback a Web Bluetooth
-        const now = new Date();
-        const dateStr = now.toLocaleDateString("es-MX", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        });
+      let printedWithApp = false;
 
-        if (type === "cliente") {
-          await printer.printClientTicket(
-            items,
-            total,
-            savedOrderNumber,
-            customerName,
-            dateStr
-          );
-        } else {
-          await printer.printKitchenOrder(
-            items,
-            savedOrderNumber,
-            customerName,
-            dateStr
-          );
-        }
+      if (printApp.isBluetoothPrintAppAvailable()) {
+        printedWithApp =
+          type === "cliente"
+            ? await printApp.printClientTicket(items, total, savedOrderNumber, customerName)
+            : await printApp.printKitchenOrder(items, savedOrderNumber, customerName);
+      }
+
+      if (!printedWithApp) {
+        await printWithWebFallback(type, savedOrderNumber, customerName);
       }
     } catch (err) {
       console.error("Error al imprimir:", err);
@@ -191,6 +194,9 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
           <DialogTitle className="text-foreground">
             {savedOrderNumber ? `Pedido #${savedOrderNumber}` : "Resumen del Pedido"}
           </DialogTitle>
+          <DialogDescription>
+            Revisa la orden, confirma el pago y luego imprime ticket de cliente o comanda.
+          </DialogDescription>
         </DialogHeader>
 
         {!savedOrderNumber && (

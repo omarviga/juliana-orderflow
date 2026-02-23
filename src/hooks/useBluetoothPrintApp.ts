@@ -6,8 +6,12 @@ import type { CartItem } from "@/types/pos";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-const PRINT_TICKET_FUNCTION = `${SUPABASE_URL}/functions/v1/print-ticket`;
-const PRINT_KITCHEN_FUNCTION = `${SUPABASE_URL}/functions/v1/print-kitchen`;
+const PRINT_TICKET_FUNCTION = SUPABASE_URL
+  ? `${SUPABASE_URL}/functions/v1/print-ticket`
+  : "";
+const PRINT_KITCHEN_FUNCTION = SUPABASE_URL
+  ? `${SUPABASE_URL}/functions/v1/print-kitchen`
+  : "";
 
 /**
  * Tipos para la API JSON de Bluetooth Print App
@@ -30,6 +34,8 @@ interface PrinterData {
  * Usa Supabase Edge Functions para generar JSON
  */
 export function useBluetoothPrintApp() {
+  const canUseSupabaseFunctions = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+
   /**
    * Obtiene los datos JSON del servidor de Supabase
    */
@@ -38,6 +44,10 @@ export function useBluetoothPrintApp() {
       functionUrl: string,
       body: Record<string, unknown>
     ): Promise<PrinterData[] | null> => {
+      if (!canUseSupabaseFunctions || !functionUrl) {
+        return null;
+      }
+
       try {
         const response = await fetch(functionUrl, {
           method: "POST",
@@ -60,7 +70,7 @@ export function useBluetoothPrintApp() {
         return null;
       }
     },
-    []
+    [canUseSupabaseFunctions]
   );
 
   /**
@@ -163,8 +173,8 @@ export function useBluetoothPrintApp() {
    * Verifica si Bluetooth Print App está disponible
    */
   const isBluetoothPrintAppAvailable = useCallback((): boolean => {
-    return true;
-  }, []);
+    return canUseSupabaseFunctions;
+  }, [canUseSupabaseFunctions]);
 
   return {
     printClientTicket,
