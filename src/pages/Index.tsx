@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/Layout";
 import { CategoryList } from "@/components/pos/CategoryList";
 import { ProductGrid } from "@/components/pos/ProductGrid";
@@ -24,12 +24,59 @@ const Index = () => {
   const [showPayment, setShowPayment] = useState(false);
   const [houseSaladProduct, setHouseSaladProduct] = useState<Product | null>(null);
 
-  // Auto-select first category
-  if (!selectedCategory && categories && categories.length > 0) {
-    setSelectedCategory(categories[0].id);
-  }
+  const visibleCategories = useMemo(() => {
+    if (!categories || categories.length === 0) return [];
 
-  const selectedCategoryData = categories?.find((category) => category.id === selectedCategory) || null;
+    const productCountByCategoryId = new Map<string, number>();
+    for (const product of products || []) {
+      productCountByCategoryId.set(
+        product.category_id,
+        (productCountByCategoryId.get(product.category_id) || 0) + 1
+      );
+    }
+
+    const normalizeCategoryName = (value: string) =>
+      value
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+
+    const groupedByName = new Map<string, typeof categories>();
+    for (const category of categories) {
+      const key = normalizeCategoryName(category.name);
+      const group = groupedByName.get(key) || [];
+      group.push(category);
+      groupedByName.set(key, group);
+    }
+
+    return categories.filter((category) => {
+      const key = normalizeCategoryName(category.name);
+      const group = groupedByName.get(key) || [];
+      if (group.length <= 1) return true;
+
+      // For duplicated names (e.g. Baguettes), keep the one with more products.
+      const preferred = [...group].sort((a, b) => {
+        const aCount = productCountByCategoryId.get(a.id) || 0;
+        const bCount = productCountByCategoryId.get(b.id) || 0;
+        return bCount - aCount;
+      })[0];
+
+      return preferred.id === category.id;
+    });
+  }, [categories, products]);
+
+  useEffect(() => {
+    if (visibleCategories.length === 0) return;
+
+    const selectedIsVisible = visibleCategories.some((category) => category.id === selectedCategory);
+    if (!selectedCategory || !selectedIsVisible) {
+      setSelectedCategory(visibleCategories[0].id);
+    }
+  }, [selectedCategory, visibleCategories]);
+
+  const selectedCategoryData =
+    visibleCategories.find((category) => category.id === selectedCategory) || null;
 
   const filteredProducts =
     products?.filter((p) => p.category_id === selectedCategory) || [];
@@ -77,7 +124,7 @@ const Index = () => {
             </div>
           ) : (
             <CategoryList
-              categories={categories || []}
+              categories={visibleCategories}
               selectedId={selectedCategory}
               onSelect={setSelectedCategory}
             />

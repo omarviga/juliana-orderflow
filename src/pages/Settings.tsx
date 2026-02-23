@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,8 +16,14 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bluetooth, Store, Clock, RotateCcw, Check, Trash2, Plus } from "lucide-react";
+import { Bluetooth, Store, Clock, RotateCcw, Check, Trash2, Plus, QrCode, Upload, ExternalLink, Link as LinkIcon } from "lucide-react";
 import { toast } from "sonner";
+
+const MENU_FILE_STORAGE_KEY = "menu_file_url";
+const MENU_FILE_NAME_KEY = "menu_file_name";
+const MENU_BUCKET = import.meta.env.VITE_SUPABASE_MENU_BUCKET || "menus";
+const ALLOWED_MIME_TYPES = ["image/png", "image/jpeg", "application/pdf"];
+const ALLOWED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".pdf"];
 
 export default function SettingsPage() {
   const { settings, updateSettings, resetToDefaults } = useSystemSettings();
@@ -31,6 +38,10 @@ export default function SettingsPage() {
 
   const [localSettings, setLocalSettings] = useState(settings);
   const [isSaving, setIsSaving] = useState(false);
+  const [menuFileUrl, setMenuFileUrl] = useState<string>(() => localStorage.getItem(MENU_FILE_STORAGE_KEY) || "");
+  const [menuFileName, setMenuFileName] = useState<string>(() => localStorage.getItem(MENU_FILE_NAME_KEY) || "");
+  const [selectedMenuFile, setSelectedMenuFile] = useState<File | null>(null);
+  const [isUploadingMenu, setIsUploadingMenu] = useState(false);
 
   const handleSaveBusinessInfo = async () => {
     setIsSaving(true);
@@ -77,6 +88,94 @@ export default function SettingsPage() {
     }
   };
 
+  const isValidMenuFile = (file: File) => {
+    const byMime = ALLOWED_MIME_TYPES.includes(file.type);
+    const lowerName = file.name.toLowerCase();
+    const byExtension = ALLOWED_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+    return byMime || byExtension;
+  };
+
+  const handleMenuFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      setSelectedMenuFile(null);
+      return;
+    }
+
+    if (!isValidMenuFile(file)) {
+      toast.error("Formato inválido. Solo se permite PNG, JPG o PDF.");
+      event.target.value = "";
+      setSelectedMenuFile(null);
+      return;
+    }
+
+    setSelectedMenuFile(file);
+  };
+
+  const handleUploadMenu = async () => {
+    if (!selectedMenuFile) {
+      toast.error("Selecciona un archivo primero.");
+      return;
+    }
+
+    setIsUploadingMenu(true);
+    try {
+      const timestamp = Date.now();
+      const safeFileName = selectedMenuFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `restaurant-menu/${timestamp}-${safeFileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(MENU_BUCKET)
+        .upload(path, selectedMenuFile, {
+          upsert: true,
+          contentType: selectedMenuFile.type || undefined,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      const { data } = supabase.storage.from(MENU_BUCKET).getPublicUrl(path);
+      const publicUrl = data.publicUrl;
+
+      setMenuFileUrl(publicUrl);
+      setMenuFileName(selectedMenuFile.name);
+      localStorage.setItem(MENU_FILE_STORAGE_KEY, publicUrl);
+      localStorage.setItem(MENU_FILE_NAME_KEY, selectedMenuFile.name);
+      setSelectedMenuFile(null);
+
+      toast.success("Menú cargado correctamente. QR generado.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo subir el archivo.";
+      toast.error(`Error al subir menú: ${message}`);
+    } finally {
+      setIsUploadingMenu(false);
+    }
+  };
+
+  const handleCopyMenuLink = async () => {
+    if (!menuFileUrl) return;
+    try {
+      await navigator.clipboard.writeText(menuFileUrl);
+      toast.success("Liga copiada al portapapeles");
+    } catch {
+      toast.error("No se pudo copiar la liga");
+    }
+  };
+
+  const handleClearMenu = () => {
+    setMenuFileUrl("");
+    setMenuFileName("");
+    setSelectedMenuFile(null);
+    localStorage.removeItem(MENU_FILE_STORAGE_KEY);
+    localStorage.removeItem(MENU_FILE_NAME_KEY);
+    toast.success("Referencia de menú eliminada");
+  };
+
+  const qrUrl = menuFileUrl
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(menuFileUrl)}`
+    : "";
+
   return (
     <Layout>
       <div className="space-y-6 p-6">
@@ -88,7 +187,7 @@ export default function SettingsPage() {
         </div>
 
         <Tabs defaultValue="business" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="business" className="gap-2">
               <Store className="h-4 w-4" />
               <span className="hidden sm:inline">Negocio</span>
@@ -100,6 +199,10 @@ export default function SettingsPage() {
             <TabsTrigger value="preferences" className="gap-2">
               <span className="h-4 w-4">⚙️</span>
               <span className="hidden sm:inline">Prefs</span>
+            </TabsTrigger>
+            <TabsTrigger value="menu-qr" className="gap-2">
+              <QrCode className="h-4 w-4" />
+              <span className="hidden sm:inline">Menú QR</span>
             </TabsTrigger>
             <TabsTrigger value="printers" className="gap-2">
               <Bluetooth className="h-4 w-4" />
@@ -379,6 +482,102 @@ export default function SettingsPage() {
                     Guardar Preferencias
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB: Menu QR */}
+          <TabsContent value="menu-qr" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Menú Digital con QR</CardTitle>
+                <CardDescription>
+                  Sube un archivo PNG, JPG o PDF para generar una liga y su código QR.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="menu-file">Archivo del menú</Label>
+                  <Input
+                    id="menu-file"
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf"
+                    onChange={handleMenuFileChange}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Formatos permitidos: PNG, JPG, PDF.
+                  </p>
+                </div>
+
+                {selectedMenuFile && (
+                  <div className="rounded-md border bg-muted/40 p-3 text-sm">
+                    Archivo seleccionado: <span className="font-medium">{selectedMenuFile.name}</span>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={handleUploadMenu} disabled={!selectedMenuFile || isUploadingMenu} className="gap-2">
+                    <Upload className="h-4 w-4" />
+                    {isUploadingMenu ? "Subiendo..." : "Subir y Generar QR"}
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    onClick={handleCopyMenuLink}
+                    disabled={!menuFileUrl}
+                    className="gap-2"
+                  >
+                    <LinkIcon className="h-4 w-4" />
+                    Copiar liga
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => menuFileUrl && window.open(menuFileUrl, "_blank", "noopener,noreferrer")}
+                    disabled={!menuFileUrl}
+                    className="gap-2"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Abrir archivo
+                  </Button>
+
+                  <Button variant="destructive" onClick={handleClearMenu} disabled={!menuFileUrl}>
+                    Limpiar
+                  </Button>
+                </div>
+
+                {menuFileUrl && (
+                  <div className="grid grid-cols-1 gap-6 rounded-lg border p-4 md:grid-cols-[300px_1fr]">
+                    <div className="flex justify-center">
+                      <img
+                        src={qrUrl}
+                        alt="Código QR del menú"
+                        className="h-[280px] w-[280px] rounded-md border bg-white p-2"
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-sm font-medium">Archivo activo</p>
+                        <p className="text-sm text-muted-foreground">{menuFileName || "Menú sin nombre"}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium">Liga para visualizar o descargar</p>
+                        <a
+                          href={menuFileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="break-all text-sm text-primary underline-offset-2 hover:underline"
+                        >
+                          {menuFileUrl}
+                        </a>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Escanea el QR para abrir el menú desde cualquier celular.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

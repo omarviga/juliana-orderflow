@@ -52,10 +52,20 @@ const regularToppings = new Set(REGULAR_TOPPING_NAMES);
 const premiumToppings = new Set(PREMIUM_TOPPING_NAMES);
 
 export const isPremiumProteinIngredient = (ingredient: Ingredient) =>
-  premiumProteins.has(normalizeName(ingredient.name)) || ingredient.is_premium;
+  (() => {
+    const name = normalizeName(ingredient.name);
+    if (regularProteins.has(name)) return false;
+    if (premiumProteins.has(name)) return true;
+    return ingredient.is_premium;
+  })();
 
 export const isPremiumToppingIngredient = (ingredient: Ingredient) =>
-  premiumToppings.has(normalizeName(ingredient.name)) || ingredient.is_premium;
+  (() => {
+    const name = normalizeName(ingredient.name);
+    if (regularToppings.has(name)) return false;
+    if (premiumToppings.has(name)) return true;
+    return ingredient.is_premium;
+  })();
 
 export const isAllowedSaladProtein = (ingredient: Ingredient) => {
   if (ingredient.type !== "proteina") return false;
@@ -68,4 +78,3 @@ export const isAllowedSaladTopping = (ingredient: Ingredient) => {
   const name = normalizeName(ingredient.name);
   return regularToppings.has(name) || premiumToppings.has(name);
 };
-
