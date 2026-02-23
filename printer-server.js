@@ -15,6 +15,12 @@ const cors = require("cors");
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+const DEFAULT_BUSINESS_NAME = "JULIANA";
+const DEFAULT_BUSINESS_SUBTITLE = "BARRA COTIDIANA";
+const DEFAULT_BUSINESS_ADDRESS =
+  "AV. MIGUEL HIDALGO #276, CENTRO, ACÁMBARO. GTO.";
+const DEFAULT_BUSINESS_PHONE = "TEL | WHATSAPP:  417 206 9111";
+
 app.use(cors());
 app.use(express.json());
 
@@ -49,6 +55,176 @@ function createTextEntry(
   };
 }
 
+function getPrintableTicketLines(payload, options = {}) {
+  const { includeBusinessHeader = true } = options;
+  const {
+    items = [],
+    total = 0,
+    orderNumber = null,
+    customerName = "Cliente",
+    businessName = DEFAULT_BUSINESS_NAME,
+    businessSubtitle = DEFAULT_BUSINESS_SUBTITLE,
+    businessAddress = DEFAULT_BUSINESS_ADDRESS,
+    businessPhone = DEFAULT_BUSINESS_PHONE,
+  } = payload;
+
+  const dateStr = new Date().toLocaleString("es-MX", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+
+  const lines = [];
+
+  if (includeBusinessHeader) {
+    lines.push(
+      businessName,
+      businessSubtitle,
+      businessAddress,
+      businessPhone,
+      "=".repeat(42)
+    );
+  }
+
+  lines.push(`Pedido: #${orderNumber || "---"}`, `Nombre: ${customerName}`, dateStr, "=".repeat(42));
+
+  items.forEach((item) => {
+    const itemLine = `${item.quantity}x ${item.product?.name || "Items"}${
+      item.productSize ? ` (${item.productSize.name})` : ""
+    }`;
+    lines.push(itemLine);
+    lines.push(`   $${(item.subtotal || 0).toFixed(0)}`);
+
+    if (item.customLabel) {
+      lines.push(`  • ${item.customLabel}`);
+    }
+  });
+
+  lines.push("=".repeat(42));
+  lines.push(`TOTAL: $${total.toFixed(0)}`);
+  lines.push("=".repeat(42));
+  lines.push("¡Gracias por tu visita!");
+  lines.push("Vuelve pronto");
+
+  return lines;
+}
+
+function getPrintableKitchenLines(payload) {
+  const { items = [], orderNumber = null, customerName = "Cliente" } = payload;
+
+  const dateStr = new Date().toLocaleString("es-MX", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+
+  const lines = [
+    "COMANDA",
+    `#${orderNumber || "---"}`,
+    "=".repeat(32),
+    `Cliente: ${customerName}`,
+    `Hora: ${dateStr}`,
+    "=".repeat(32),
+  ];
+
+  items.forEach((item) => {
+    lines.push(`${item.quantity}x ${(item.product?.name || "Item").toUpperCase()}`);
+
+    if (item.productSize) {
+      lines.push(`  Tamaño: ${item.productSize.name}`);
+    }
+
+    if (item.customLabel) {
+      lines.push(`  • ${item.customLabel}`);
+    }
+  });
+
+  lines.push("=".repeat(32));
+  lines.push("PREPARAR AHORA");
+
+  return lines;
+}
+
+function escapePdfText(value) {
+  return String(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function renderPdfFromLines({ res, lines, title, filePrefix, includeBrandHeader = false }) {
+  const safePrefix = filePrefix.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const filename = `${safePrefix}-${Date.now()}.pdf`;
+
+  const textLines = includeBrandHeader
+    ? [
+        "Juliana",
+        "BARRA COTIDIANA",
+        DEFAULT_BUSINESS_ADDRESS,
+        DEFAULT_BUSINESS_PHONE,
+        "",
+        ...lines,
+      ]
+    : [title, "", ...lines];
+  const startY = 800;
+  const lineHeight = 14;
+
+  const contentLines = ["BT", "/F1 11 Tf"];
+  textLines.forEach((line, index) => {
+    const y = startY - index * lineHeight;
+    if (y < 40) return;
+    if (includeBrandHeader && index === 0) {
+      contentLines.push("/F1 28 Tf");
+      contentLines.push(`1 0 0 1 190 ${y} Tm (${escapePdfText(line)}) Tj`);
+      contentLines.push("/F1 11 Tf");
+      return;
+    }
+
+    if (includeBrandHeader && index === 1) {
+      contentLines.push("/F1 16 Tf");
+      contentLines.push(`1 0 0 1 205 ${y} Tm (${escapePdfText(line)}) Tj`);
+      contentLines.push("/F1 11 Tf");
+      return;
+    }
+
+    contentLines.push(`1 0 0 1 36 ${y} Tm (${escapePdfText(line)}) Tj`);
+  });
+  contentLines.push("ET");
+
+  const contentStream = contentLines.join("\n");
+  const contentLength = Buffer.byteLength(contentStream, "utf8");
+
+  const objects = [
+    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n",
+    "2 0 obj << /Type /Pages /Count 1 /Kids [3 0 R] >> endobj\n",
+    "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n",
+    "4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Courier >> endobj\n",
+    `5 0 obj << /Length ${contentLength} >> stream\n${contentStream}\nendstream endobj\n`,
+  ];
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+
+  objects.forEach((obj) => {
+    offsets.push(Buffer.byteLength(pdf, "utf8"));
+    pdf += obj;
+  });
+
+  const xrefOffset = Buffer.byteLength(pdf, "utf8");
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += "0000000000 65535 f \n";
+
+  for (let index = 1; index < offsets.length; index += 1) {
+    pdf += `${offsets[index].toString().padStart(10, "0")} 00000 n \n`;
+  }
+
+  pdf += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\n`;
+  pdf += `startxref\n${xrefOffset}\n%%EOF`;
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename=\"${filename}\"`);
+  res.send(Buffer.from(pdf, "utf8"));
+}
+
+
 // Endpoint de prueba
 app.get("/", (req, res) => {
   res.json({
@@ -56,7 +232,9 @@ app.get("/", (req, res) => {
     endpoints: {
       test: "GET /api/print/test",
       ticket: "POST /api/print/ticket",
+      ticketPdf: "POST /api/print/ticket/pdf",
       kitchen: "POST /api/print/kitchen",
+      kitchenPdf: "POST /api/print/kitchen/pdf",
     },
   });
 });
@@ -82,16 +260,23 @@ app.post("/api/print/ticket", (req, res) => {
     total = 0,
     orderNumber = null,
     customerName = "Cliente",
-    businessName = "JULIANA",
-    businessSubtitle = "BARRA COTIDIANA",
-    businessAddress = "Av. Miguel Hidalgo #276",
-    businessPhone = "Tel: 417 206 0111",
+    businessName = DEFAULT_BUSINESS_NAME,
+    businessSubtitle = DEFAULT_BUSINESS_SUBTITLE,
+    businessAddress = DEFAULT_BUSINESS_ADDRESS,
+    businessPhone = DEFAULT_BUSINESS_PHONE,
   } = req.body;
 
   const data = [];
 
   // Space
   data.push(createTextEntry(" "));
+
+  // Encabezado de marca (logo textual para impresión)
+  data.push({
+    type: 4,
+    content:
+      '<div style="text-align:center;margin-bottom:8px;"><div style="font-size:38px;font-weight:700;line-height:1;">Juliana</div><div style="font-size:22px;font-weight:700;line-height:1.1;">BARRA<br/>COTIDIANA</div></div>',
+  });
 
   // Header
   data.push(createTextEntry(businessName, 1, 1, 3));
@@ -147,6 +332,19 @@ app.post("/api/print/ticket", (req, res) => {
   data.push(createTextEntry(" ", 0, 1, 0));
 
   res.json(data);
+});
+
+app.post("/api/print/ticket/pdf", (req, res) => {
+  const lines = getPrintableTicketLines(req.body, {
+    includeBusinessHeader: false,
+  });
+  renderPdfFromLines({
+    res,
+    lines,
+    title: "Ticket Cliente",
+    filePrefix: "ticket-cliente",
+    includeBrandHeader: true,
+  });
 });
 
 // Endpoint para comanda de cocina
@@ -208,11 +406,23 @@ app.post("/api/print/kitchen", (req, res) => {
   res.json(data);
 });
 
+app.post("/api/print/kitchen/pdf", (req, res) => {
+  const lines = getPrintableKitchenLines(req.body);
+  renderPdfFromLines({
+    res,
+    lines,
+    title: "Comanda Cocina",
+    filePrefix: "comanda-cocina",
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`📱 Servidor de Bluetooth Print escuchando en puerto ${PORT}`);
   console.log(`http://localhost:${PORT}`);
   console.log(`\nEndpoints disponibles:`);
   console.log(`- http://localhost:${PORT}/api/print/test`);
   console.log(`- POST http://localhost:${PORT}/api/print/ticket`);
+  console.log(`- POST http://localhost:${PORT}/api/print/ticket/pdf`);
   console.log(`- POST http://localhost:${PORT}/api/print/kitchen`);
+  console.log(`- POST http://localhost:${PORT}/api/print/kitchen/pdf`);
 });
