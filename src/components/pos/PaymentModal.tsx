@@ -32,10 +32,13 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
   const handlePay = async () => {
     setSaving(true);
     try {
+      // Use customer name or default to "S/N" if empty
+      const finalCustomerName = customerName.trim() || "S/N";
+
       // Create order
       const { data: order, error: orderError } = await supabase
         .from("orders")
-        .insert({ total, status: "pagado", customer_name: customerName.trim() })
+        .insert({ total, status: "pagado", customer_name: finalCustomerName })
         .select()
         .single();
       if (orderError) throw orderError;
@@ -90,14 +93,14 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
           await printer.printKitchenOrder(
             items,
             order.order_number,
-            customerName,
+            finalCustomerName,
             dateStr
           );
           await printer.printClientTicket(
             items,
             total,
             order.order_number,
-            customerName,
+            finalCustomerName,
             dateStr
           );
         } catch (err) {
@@ -170,11 +173,11 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
         {!savedOrderNumber && (
           <div className="space-y-2">
             <label htmlFor="customer-name" className="text-sm font-medium text-foreground">
-              Nombre de la orden
+              Nombre de la orden <span className="text-xs text-muted-foreground">(opcional)</span>
             </label>
             <Input
               id="customer-name"
-              placeholder="¿A nombre de quién es la orden?"
+              placeholder="¿A nombre de quién es la orden? (puedes dejar vacío)"
               value={customerName}
               onChange={(event) => setCustomerName(event.target.value)}
             />
@@ -198,7 +201,7 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
         </div>
 
         {!savedOrderNumber ? (
-          <Button onClick={handlePay} disabled={saving || !customerName.trim()} className="w-full">
+          <Button onClick={handlePay} disabled={saving} className="w-full">
             {saving ? "Guardando..." : "Confirmar Pago"}
           </Button>
         ) : (
