@@ -6,7 +6,7 @@ export interface OrderWithItems {
   order_number: number;
   total: number;
   status: "pendiente" | "pagado" | "cancelado";
-  customer_name: string;
+  customer_name?: string;
   created_at: string;
   order_items?: OrderItem[];
 }
