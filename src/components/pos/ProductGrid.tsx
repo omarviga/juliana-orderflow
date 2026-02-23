@@ -7,12 +7,45 @@ import { cn } from "@/lib/utils";
 
 interface Props {
   products: Product[];
+  categoryName?: string;
   productSizes: ProductSize[];
   onAddToCart: (product: Product, price: number, size?: ProductSize) => void;
   onCustomize: (product: Product) => void;
+  onCustomizeHouseSalad: (product: Product) => void;
 }
 
-export function ProductGrid({ products, productSizes, onAddToCart, onCustomize }: Props) {
+export function ProductGrid({
+  products,
+  categoryName,
+  productSizes,
+  onAddToCart,
+  onCustomize,
+  onCustomizeHouseSalad,
+}: Props) {
+  const isSandwichCategory = (categoryName || "").toLowerCase().includes("sandwich");
+  const isHouseSaladCategory = (categoryName || "").toLowerCase().includes("ensaladas de la casa");
+
+  if (isSandwichCategory) {
+    return (
+      <div className="space-y-6 p-3">
+        <SectionedProductGrid
+          title="Sandwiches"
+          products={products}
+          productSizes={productSizes}
+          filterSizeNames={["S"]}
+          onAddToCart={onAddToCart}
+        />
+        <SectionedProductGrid
+          title="Baguettes"
+          products={products}
+          productSizes={productSizes}
+          filterSizeNames={["B"]}
+          onAddToCart={onAddToCart}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-2 gap-3 p-3 lg:grid-cols-3">
       {products.map((product) => {
@@ -59,15 +92,54 @@ export function ProductGrid({ products, productSizes, onAddToCart, onCustomize }
               <Button
                 size="sm"
                 className="mt-3 w-full gap-1"
-                onClick={() => onAddToCart(product, product.price!, undefined)}
+                onClick={() =>
+                  isHouseSaladCategory
+                    ? onCustomizeHouseSalad(product)
+                    : onAddToCart(product, product.price!, undefined)
+                }
               >
-                <Plus className="h-4 w-4" /> Agregar
+                <Plus className="h-4 w-4" /> {isHouseSaladCategory ? "Agregar extras" : "Agregar"}
               </Button>
             </CardContent>
           </Card>
         );
       })}
     </div>
+  );
+}
+
+function SectionedProductGrid({
+  title,
+  products,
+  productSizes,
+  filterSizeNames,
+  onAddToCart,
+}: {
+  title: string;
+  products: Product[];
+  productSizes: ProductSize[];
+  filterSizeNames: string[];
+  onAddToCart: (product: Product, price: number, size?: ProductSize) => void;
+}) {
+  const cards = products
+    .map((product) => {
+      const sizes = productSizes
+        .filter((s) => s.product_id === product.id)
+        .filter((size) => filterSizeNames.includes(size.name.toUpperCase()));
+
+      if (sizes.length === 0) return null;
+
+      return <SizedProductCard key={`${product.id}-${title}`} product={product} sizes={sizes} onAdd={onAddToCart} />;
+    })
+    .filter(Boolean);
+
+  if (cards.length === 0) return null;
+
+  return (
+    <section>
+      <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">{title}</h3>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">{cards}</div>
+    </section>
   );
 }
 
