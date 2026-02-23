@@ -207,19 +207,37 @@ export async function printToDevice(
   htmlContent: string,
   printerSize: "80mm" | "58mm"
 ): Promise<void> {
-  // En navegadores, usamos la API de Web Bluetooth
   if (!navigator.bluetooth) {
     throw new Error("Web Bluetooth API no disponible en este navegador");
   }
 
   try {
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ name: "" }], // Filter by name if known
-    });
+    let device;
+
+    // Intenta obtener el dispositivo por su dirección si has sido emparejado antes
+    try {
+      const pairedDevices = await navigator.bluetooth.getAvailability?.();
+      if (pairedDevices) {
+        // Android - intenta usar dispositivo por su dirección/ID
+        device = await navigator.bluetooth.requestDevice({
+          filters: [{ services: ["1101"] }], // Bluetooth Serial Port Profile
+          acceptAllDevices: false,
+        });
+      }
+    } catch (e) {
+      // No se pudo obtener por dirección, solicita al usuario
+      device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: ["1101"] }],
+        optionalServices: ["1101", "180a"], // Device Information
+        acceptAllDevices: false,
+      });
+    }
 
     if (!device) {
       throw new Error("No se seleccionó dispositivo");
     }
+
+    console.log("Dispositivo Bluetooth seleccionado:", device.name, device.id);
 
     // Conectar a GATT
     const server = await device.gatt?.connect();
@@ -227,20 +245,57 @@ export async function printToDevice(
       throw new Error("No se pudo conectar a GATT server");
     }
 
-    // Obtener servicio de impresión (UUID estándar de impresoras térmicas)
-    const service = await server.getPrimaryService("00001101-0000-1000-8000-00805f9b34fb");
-    const characteristic = await service.getCharacteristic(
-      "00001101-0000-1000-8000-00805f9b34fb"
-    );
+    console.log("Conectado a GATT server");
+
+    // Obtener servicio Serial Port Profile (UUID estándar para impresoras)
+    const service = await server.getPrimaryService("1101");
+
+    // Obtener característica de escritura (hay diferentes en diferentes impresoras)
+    let characteristic;
+    try {
+      // Intenta obtener la característica estándar
+      characteristic = await service.getCharacteristic("2a19");
+    } catch {
+      // Si no existe, obtén cualquier característica escribible
+      const characteristics = await service.getCharacteristics();
+      characteristic = characteristics.find(
+        (c) => c.properties.write || c.properties.writeWithoutResponse
+      );
+
+      if (!characteristic) {
+        throw new Error("No se encontró característica escribible");
+      }
+    }
 
     // Convertir HTML a datos imprimibles
     const printData = htmlToEscPosCommands(htmlContent, printerSize);
 
-    // Enviar datos a la impresora
-    await characteristic.writeValue(new Uint8Array(printData));
+    console.log("Enviando", printData.length, "bytes a la impresora");
+
+    // Enviar datos a la impresora en chunks (Android tiene límite de 512 bytes)
+    const CHUNK_SIZE = 512;
+    for (let i = 0; i < printData.length; i += CHUNK_SIZE) {
+      const chunk = printData.slice(i, Math.min(i + CHUNK_SIZE, printData.length));
+      const buffer = new Uint8Array(chunk);
+
+      if (characteristic.properties.writeWithoutResponse) {
+        await characteristic.writeValueWithoutResponse(buffer);
+      } else {
+        await characteristic.writeValue(buffer);
+      }
+
+      // Pequeña pausa entre chunks
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    console.log("Datos enviados exitosamente");
+
+    // Esperar un poco antes de desconectar
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     // Desconectar
-    await device.gatt?.disconnect();
+    device.gatt?.disconnect();
+    console.log("Desconectado de la impresora");
   } catch (error) {
     console.error("Error de impresión:", error);
     throw error;
@@ -256,30 +311,49 @@ function htmlToEscPosCommands(html: string, printerSize: "80mm" | "58mm"): numbe
   // Inicializar impresora
   commands.push(0x1b, 0x40); // ESC @ - Reset
 
-  // Configurar tamaño de fuente y área de impresión
+  // Configurar tamaño de fuente y área de impresión según tamaño
   if (printerSize === "58mm") {
-    commands.push(0x1b, 0x57, 0x06, 0x00); // Ancho de 58mm
-    commands.push(0x1d, 0x21, 0x11); // Font size 17
+    // Para 58mm: fuente normal
+    commands.push(0x1d, 0x21, 0x00); // GS ! - Font size normal
   } else {
-    commands.push(0x1b, 0x57, 0x06, 0x00); // Ancho de 80mm
-    commands.push(0x1d, 0x21, 0x00); // Font normal
+    // Para 80mm: fuente normal
+    commands.push(0x1d, 0x21, 0x00);
   }
 
-  // Extraer texto del HTML (simplificado)
-  const text = html
+  // Alineación central
+  commands.push(0x1b, 0x61, 0x01); // ESC a - Center alignment
+
+  // Extraer texto del HTML
+  let text = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/div>/g, "\n")
+    .replace(/<div[^>]*>/g, "")
     .replace(/<[^>]*>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">");
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join("\n");
 
   // Convertir texto a bytes UTF-8
   const encoder = new TextEncoder();
   const textBytes = encoder.encode(text);
   commands.push(...Array.from(textBytes));
 
-  // Salto de línea y corte de papel
+  // Alineación izquierda (para cierre)
+  commands.push(0x1b, 0x61, 0x00); // ESC a - Left alignment
+
+  // Saltos de línea
   commands.push(0x0a, 0x0a, 0x0a);
-  commands.push(0x1d, 0x56, 0x42, 0x00); // Partial cut
+
+  // Corte de papel (parcial)
+  commands.push(0x1d, 0x56, 0x41, 0x00); // GS V - Partial cut
+
+  // Fin de transmisión
+  commands.push(0x1b, 0x69); // ESC i - Partial cut with feed
 
   return commands;
 }

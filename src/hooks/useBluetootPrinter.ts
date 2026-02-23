@@ -30,12 +30,12 @@ export function useBluetootPrinter() {
     return (
       stored && {
         ...JSON.parse(stored),
-        autoprint: true,
+        autoPrint: true,
         useBluetoothIfAvailable: true,
         fallbackToWeb: true,
       }
     ) || {
-      autoprint: true,
+      autoPrint: true,
       useBluetoothIfAvailable: true,
       fallbackToWeb: true,
     };
@@ -58,9 +58,11 @@ export function useBluetootPrinter() {
         return false;
       }
 
+      toast.loading("Buscando impresoras...");
+
       const device = await navigator.bluetooth.requestDevice({
         filters: [{ services: ["1101"] }],
-        optionalServices: ["1101"],
+        optionalServices: ["1101", "180a"],
       });
 
       if (!device) return false;
@@ -74,11 +76,23 @@ export function useBluetootPrinter() {
       };
 
       savePreferences(newPrefs);
-      toast.success("Impresora 80mm emparejada correctamente");
+      toast.success(`Impresora "${device.name}" emparejada correctamente`);
       return true;
     } catch (error) {
       console.error("Error al emparejar impresora:", error);
-      toast.error("Error al emparejar impresora");
+      if (error instanceof Error) {
+        if (error.message.includes("User cancelled")) {
+          toast.info("Emparejamiento cancelado");
+        } else if (error.message.includes("NotFoundError")) {
+          toast.error("No se encontraron impresoras. Verifica que esté encendida");
+        } else if (error.message.includes("NotAllowedError")) {
+          toast.error("Permiso denegado. Revisa los permisos de Bluetooth");
+        } else {
+          toast.error(`Error: ${error.message}`);
+        }
+      } else {
+        toast.error("Error desconocido al emparejar impresora");
+      }
       return false;
     }
   }, [preferences, savePreferences]);
@@ -91,9 +105,11 @@ export function useBluetootPrinter() {
         return false;
       }
 
+      toast.loading("Buscando impresoras...");
+
       const device = await navigator.bluetooth.requestDevice({
         filters: [{ services: ["1101"] }],
-        optionalServices: ["1101"],
+        optionalServices: ["1101", "180a"],
       });
 
       if (!device) return false;
@@ -107,11 +123,23 @@ export function useBluetootPrinter() {
       };
 
       savePreferences(newPrefs);
-      toast.success("Impresora 58mm emparejada correctamente");
+      toast.success(`Impresora "${device.name}" emparejada correctamente`);
       return true;
     } catch (error) {
       console.error("Error al emparejar impresora:", error);
-      toast.error("Error al emparejar impresora");
+      if (error instanceof Error) {
+        if (error.message.includes("User cancelled")) {
+          toast.info("Emparejamiento cancelado");
+        } else if (error.message.includes("NotFoundError")) {
+          toast.error("No se encontraron impresoras. Verifica que esté encendida");
+        } else if (error.message.includes("NotAllowedError")) {
+          toast.error("Permiso denegado. Revisa los permisos de Bluetooth");
+        } else {
+          toast.error(`Error: ${error.message}`);
+        }
+      } else {
+        toast.error("Error desconocido al emparejar impresora");
+      }
       return false;
     }
   }, [preferences, savePreferences]);
