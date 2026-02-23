@@ -10,6 +10,7 @@ import type { CartItem } from "@/types/pos";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Printer } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 interface Props {
   open: boolean;
@@ -22,6 +23,7 @@ interface Props {
 export function PaymentModal({ open, onClose, items, total, onOrderComplete }: Props) {
   const [saving, setSaving] = useState(false);
   const [savedOrderNumber, setSavedOrderNumber] = useState<number | null>(null);
+  const [customerName, setCustomerName] = useState("");
   const ticketRef = useRef<HTMLDivElement>(null);
   const comandaRef = useRef<HTMLDivElement>(null);
 
@@ -31,7 +33,7 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
       // Create order
       const { data: order, error: orderError } = await supabase
         .from("orders")
-        .insert({ total, status: "pagado" })
+        .insert({ total, status: "pagado", customer_name: customerName.trim() })
         .select()
         .single();
       if (orderError) throw orderError;
@@ -130,6 +132,7 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
       onOrderComplete();
     }
     setSavedOrderNumber(null);
+    setCustomerName("");
     onClose();
   };
 
@@ -141,6 +144,20 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
             {savedOrderNumber ? `Pedido #${savedOrderNumber}` : "Resumen del Pedido"}
           </DialogTitle>
         </DialogHeader>
+
+        {!savedOrderNumber && (
+          <div className="space-y-2">
+            <label htmlFor="customer-name" className="text-sm font-medium text-foreground">
+              Nombre de la orden
+            </label>
+            <Input
+              id="customer-name"
+              placeholder="¿A nombre de quién es la orden?"
+              value={customerName}
+              onChange={(event) => setCustomerName(event.target.value)}
+            />
+          </div>
+        )}
 
         <div className="space-y-2 text-sm max-h-[50vh] overflow-y-auto">
           {items.map((item) => (
@@ -159,7 +176,7 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
         </div>
 
         {!savedOrderNumber ? (
-          <Button onClick={handlePay} disabled={saving} className="w-full">
+          <Button onClick={handlePay} disabled={saving || !customerName.trim()} className="w-full">
             {saving ? "Guardando..." : "Confirmar Pago"}
           </Button>
         ) : (
@@ -198,6 +215,7 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
             <div className="mb-1">
               Pedido: #{savedOrderNumber || "---"}
             </div>
+            <div className="mb-1">Nombre: {customerName || "---"}</div>
             <div className="mb-1">{dateStr}</div>
             <div className="line" />
             {items.map((item) => (

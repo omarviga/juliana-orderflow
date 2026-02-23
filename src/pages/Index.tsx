@@ -5,6 +5,7 @@ import { ProductGrid } from "@/components/pos/ProductGrid";
 import { CartPanel } from "@/components/pos/CartPanel";
 import { CustomSaladModal } from "@/components/pos/CustomSaladModal";
 import { PaymentModal } from "@/components/pos/PaymentModal";
+import { HouseSaladExtrasModal } from "@/components/pos/HouseSaladExtrasModal";
 import { useCategories, useProducts, useProductSizes, useIngredients } from "@/hooks/useMenuData";
 import { useCart } from "@/hooks/useCart";
 import type { Product, ProductSize, SelectedIngredient } from "@/types/pos";
@@ -21,11 +22,14 @@ const Index = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [customizeProduct, setCustomizeProduct] = useState<Product | null>(null);
   const [showPayment, setShowPayment] = useState(false);
+  const [houseSaladProduct, setHouseSaladProduct] = useState<Product | null>(null);
 
   // Auto-select first category
   if (!selectedCategory && categories && categories.length > 0) {
     setSelectedCategory(categories[0].id);
   }
+
+  const selectedCategoryData = categories?.find((category) => category.id === selectedCategory) || null;
 
   const filteredProducts =
     products?.filter((p) => p.category_id === selectedCategory) || [];
@@ -47,6 +51,15 @@ const Index = () => {
     label: string
   ) => {
     cart.addItem(product, unitPrice, 1, size, customizations, label);
+  };
+
+  const handleHouseSaladAdd = (
+    product: Product,
+    unitPrice: number,
+    customizations: SelectedIngredient[],
+    label: string
+  ) => {
+    cart.addItem(product, unitPrice, 1, undefined, customizations, label);
   };
 
   const isLoading = catLoading || prodLoading;
@@ -83,9 +96,11 @@ const Index = () => {
           ) : (
             <ProductGrid
               products={filteredProducts}
+              categoryName={selectedCategoryData?.name}
               productSizes={productSizes || []}
               onAddToCart={handleAddToCart}
               onCustomize={setCustomizeProduct}
+              onCustomizeHouseSalad={setHouseSaladProduct}
             />
           )}
         </main>
@@ -112,6 +127,16 @@ const Index = () => {
           sizes={customizableSizes}
           ingredients={ingredients || []}
           onAddToCart={handleCustomSaladAdd}
+        />
+      )}
+
+      {houseSaladProduct && (
+        <HouseSaladExtrasModal
+          open={!!houseSaladProduct}
+          onClose={() => setHouseSaladProduct(null)}
+          product={houseSaladProduct}
+          ingredients={ingredients || []}
+          onAddToCart={handleHouseSaladAdd}
         />
       )}
 
