@@ -11,6 +11,15 @@ const PRINTER_CONFIGS: Record<string, PrinterConfig> = {
   "58mm": { width: 58, charsPerLine: 32, fontSize: "small" },
 };
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 /**
  * Genera HTML para ticket de cliente (80mm)
  */
@@ -22,76 +31,176 @@ export function generateClientTicketHTML(
   dateStr: string
 ): string {
   const config = PRINTER_CONFIGS["80mm"];
-
-  const separator = "=".repeat(config.charsPerLine);
-  const lineSeparator = "-".repeat(config.charsPerLine);
+  const safeCustomerName = escapeHtml(customerName || "---");
+  const safeDate = escapeHtml(dateStr);
 
   let html = `
     <html>
       <head>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
+          * { box-sizing: border-box; }
           body {
             margin: 0;
             padding: 0;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
+            background: #ffffff;
+            font-family: 'Trebuchet MS', 'Segoe UI', Arial, sans-serif;
             width: ${config.width}mm;
-            line-height: 1.4;
+            color: #111111;
           }
           .receipt {
+            width: 100%;
             padding: 3mm;
-            text-align: center;
-            white-space: pre-wrap;
-            word-wrap: break-word;
           }
-          .header { font-weight: bold; font-size: 18px; margin-bottom: 2mm; }
-          .subheader { font-size: 10px; margin-bottom: 3mm; }
-          .line-sep { margin: 2mm 0; border-bottom: 1px dashed #000; }
-          .item { text-align: left; font-size: 11px; margin: 1mm 0; }
-          .item-detail { text-align: left; font-size: 9px; padding-left: 3mm; color: #666; }
-          .total { font-weight: bold; font-size: 14px; margin: 2mm 0; }
-          .bold { font-weight: bold; }
-          .text-right { text-align: right; }
-          .footer { font-size: 10px; margin-top: 3mm; }
+          .brand-top {
+            border: 2px solid #000000;
+            border-radius: 8px;
+            padding: 2.5mm 2mm;
+            text-align: center;
+            margin-bottom: 2mm;
+          }
+          .brand-script {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            line-height: 1;
+            color: #000000;
+          }
+          .brand-subtitle {
+            margin-top: 1mm;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1.4px;
+            color: #000000;
+          }
+          .brand-meta {
+            margin-top: 1.5mm;
+            font-size: 9px;
+            line-height: 1.35;
+            color: #3a3a3a;
+          }
+          .section-title {
+            margin: 1.2mm 0 1mm;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 1.1px;
+            text-transform: uppercase;
+            color: #000000;
+          }
+          .order-box {
+            border: 1px solid #d9d9d9;
+            border-radius: 6px;
+            padding: 1.8mm;
+            font-size: 10px;
+          }
+          .order-line {
+            display: flex;
+            justify-content: space-between;
+            gap: 2mm;
+            margin: 0.7mm 0;
+          }
+          .muted {
+            color: #666666;
+          }
+          .items-box {
+            border: 1px dashed #b8b8b8;
+            border-radius: 6px;
+            padding: 1.6mm;
+          }
+          .item-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 2mm;
+            font-size: 10px;
+            margin: 1mm 0;
+          }
+          .item-name {
+            font-weight: 700;
+            color: #111111;
+            max-width: 50mm;
+            line-height: 1.25;
+          }
+          .item-price {
+            font-weight: 700;
+            white-space: nowrap;
+          }
+          .item-detail {
+            margin: 0 0 1mm 2mm;
+            font-size: 9px;
+            color: #5f5f5f;
+            line-height: 1.25;
+          }
+          .item-detail::before {
+            content: "• ";
+            color: #000000;
+          }
+          .total-row {
+            margin-top: 2mm;
+            border: 2px solid #000000;
+            border-radius: 7px;
+            padding: 1.6mm 2mm;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            font-weight: 800;
+            color: #000000;
+          }
+          .footer {
+            margin-top: 2mm;
+            text-align: center;
+            font-size: 9.5px;
+            color: #3f3f3f;
+            line-height: 1.35;
+          }
         </style>
       </head>
       <body>
-        <div class="receipt">
-          <div class="header">JULIANA</div>
-          <div class="subheader">BARRA COTIDIANA</div>
-          <div class="subheader">Av. Miguel Hidalgo #276</div>
-          <div class="subheader">Tel: 417 206 0111</div>
-          <div class="line-sep"></div>
-          <div style="text-align: left;">
-            <div class="bold">Pedido: #${orderNumber || "---"}</div>
-            <div class="bold">Nombre: ${customerName || "---"}</div>
-            <div>${dateStr}</div>
+        <div class="receipt print-ticket-cliente">
+          <div class="brand-top">
+            <div class="brand-script">Juliana</div>
+            <div class="brand-subtitle">BARRA COTIDIANA</div>
+            <div class="brand-meta">
+              AV. MIGUEL HIDALGO #276, COL CENTRO, ACAMBARO GTO.<br/>
+              Tel. 417 206 9111
+            </div>
           </div>
-          <div class="line-sep"></div>
+
+          <div class="section-title">Detalle del pedido</div>
+          <div class="order-box">
+            <div class="order-line"><span class="muted">Pedido</span><strong>#${orderNumber || "---"}</strong></div>
+            <div class="order-line"><span class="muted">Cliente</span><strong>${safeCustomerName}</strong></div>
+            <div class="order-line"><span class="muted">Fecha</span><span>${safeDate}</span></div>
+          </div>
+
+          <div class="section-title">Consumo</div>
+          <div class="items-box">
   `;
 
   // Items
   items.forEach((item) => {
     const itemLine = `${item.quantity}x ${item.product.name}${item.productSize ? ` (${item.productSize.name})` : ""}`;
+    const safeItemLine = escapeHtml(itemLine);
     const priceLine = `$${item.subtotal.toFixed(0)}`;
 
-    html += `<div class="item"><span>${itemLine}</span><span class="text-right">${priceLine}</span></div>`;
+    html += `<div class="item-row"><span class="item-name">${safeItemLine}</span><span class="item-price">${priceLine}</span></div>`;
 
     if (item.customLabel) {
-      html += `<div class="item-detail">${item.customLabel}</div>`;
+      html += `<div class="item-detail">${escapeHtml(item.customLabel)}</div>`;
     }
   });
 
   html += `
-          <div class="line-sep"></div>
-          <div class="total" style="display: flex; justify-content: space-between;">
+          </div>
+
+          <div class="total-row">
             <span>TOTAL</span>
             <span>$${total.toFixed(0)}</span>
           </div>
-          <div class="line-sep"></div>
-          <div class="footer">¡Gracias por tu visita!</div>
-          <div class="footer">Vuelve pronto</div>
+          <div class="footer">Gracias por visitarnos</div>
+          <div class="footer">Te esperamos pronto</div>
         </div>
       </body>
     </html>

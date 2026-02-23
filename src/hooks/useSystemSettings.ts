@@ -16,9 +16,9 @@ export interface SystemSettings {
 
 const DEFAULT_SETTINGS: SystemSettings = {
   businessName: "JULIANA — BARRA COTIDIANA",
-  businessPhone: "417 206 0111",
-  businessAddress: "Av. Miguel Hidalgo #276",
-  businessCity: "San Luis Potosí",
+  businessPhone: "417 206 9111",
+  businessAddress: "AV. MIGUEL HIDALGO #276, COL CENTRO, ACÁMBARO GTO.",
+  businessCity: "Acámbaro, Gto.",
   businessEmail: "info@juliana.com",
   openTime: "09:00",
   closeTime: "22:00",
@@ -28,17 +28,30 @@ const DEFAULT_SETTINGS: SystemSettings = {
   language: "es",
 };
 
+const HARD_CODED_BUSINESS: Pick<
+  SystemSettings,
+  "businessName" | "businessPhone" | "businessAddress" | "businessCity"
+> = {
+  businessName: "JULIANA — BARRA COTIDIANA",
+  businessPhone: "417 206 9111",
+  businessAddress: "AV. MIGUEL HIDALGO #276, COL CENTRO, ACÁMBARO GTO.",
+  businessCity: "Acámbaro, Gto.",
+};
+
 const STORAGE_KEY = "systemSettings";
 
 export function useSystemSettings() {
   const [settings, setSettings] = useState<SystemSettings>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return (stored && JSON.parse(stored)) || DEFAULT_SETTINGS;
+    const parsed = (stored && JSON.parse(stored)) || DEFAULT_SETTINGS;
+    const hydrated = { ...parsed, ...HARD_CODED_BUSINESS };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(hydrated));
+    return hydrated;
   });
 
   const updateSettings = useCallback((newSettings: Partial<SystemSettings>) => {
     setSettings((prev) => {
-      const updated = { ...prev, ...newSettings };
+      const updated = { ...prev, ...newSettings, ...HARD_CODED_BUSINESS };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       return updated;
     });
