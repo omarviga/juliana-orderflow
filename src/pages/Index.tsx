@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Header } from "@/components/pos/Header";
+import { Layout } from "@/components/Layout";
 import { CategoryList } from "@/components/pos/CategoryList";
 import { ProductGrid } from "@/components/pos/ProductGrid";
 import { CartPanel } from "@/components/pos/CartPanel";
@@ -65,8 +65,7 @@ const Index = () => {
   const isLoading = catLoading || prodLoading;
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background">
-      <Header />
+    <Layout>
       <div className="flex flex-1 overflow-hidden">
         {/* Categories */}
         <aside className="w-48 shrink-0 overflow-y-auto border-r bg-card lg:w-56">
@@ -148,7 +147,7 @@ const Index = () => {
         total={cart.total}
         onOrderComplete={cart.clearCart}
       />
-    </div>
+    </Layout>
   );
 };
 

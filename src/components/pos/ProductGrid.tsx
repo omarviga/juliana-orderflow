@@ -22,8 +22,15 @@ export function ProductGrid({
   onCustomize,
   onCustomizeHouseSalad,
 }: Props) {
-  const isSandwichCategory = (categoryName || "").toLowerCase().includes("sandwich");
-  const isHouseSaladCategory = (categoryName || "").toLowerCase().includes("ensaladas de la casa");
+  // Normalize category name for comparison (remove accents)
+  const normalizedCategory = (categoryName || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  const isSandwichCategory = normalizedCategory.includes("sandwich");
+  const isBaguetteCategory = normalizedCategory.includes("baguette");
+  const isHouseSaladCategory = normalizedCategory.includes("ensaladas");
 
   if (isSandwichCategory) {
     return (
@@ -35,13 +42,76 @@ export function ProductGrid({
           filterSizeNames={["S"]}
           onAddToCart={onAddToCart}
         />
-        <SectionedProductGrid
-          title="Baguettes"
-          products={products}
-          productSizes={productSizes}
-          filterSizeNames={["B"]}
-          onAddToCart={onAddToCart}
-        />
+      </div>
+    );
+  }
+
+  if (isBaguetteCategory) {
+    return (
+      <div className="grid grid-cols-2 gap-3 p-3 lg:grid-cols-3">
+        {products.map((product) => {
+          const sizes = productSizes.filter((s) => s.product_id === product.id);
+          const hasSizes = sizes.length > 0;
+
+          if (product.is_customizable) {
+            return (
+              <Card
+                key={product.id}
+                className="cursor-pointer transition-shadow hover:shadow-md"
+                onClick={() => onCustomize(product)}
+              >
+                <CardContent className="flex flex-col items-center justify-center p-4 text-center">
+                  <span className="mb-2 text-2xl">🥗</span>
+                  <h3 className="font-semibold text-foreground">{product.name}</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">Desde $110</p>
+                  <Button size="sm" className="mt-3 w-full gap-1" variant="default">
+                    <Plus className="h-4 w-4" /> Personalizar
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          }
+
+          // For Baguettes: show simplified view without size selector
+          if (hasSizes) {
+            const baguetteSize = sizes[0]; // Take first available size
+            return (
+              <Card key={product.id} className="transition-shadow hover:shadow-md">
+                <CardContent className="flex flex-col items-center justify-center p-4 text-center">
+                  <h3 className="font-semibold text-foreground">{product.name}</h3>
+                  <p className="mt-2 text-lg font-bold text-primary">
+                    ${baguetteSize.price.toFixed(0)}
+                  </p>
+                  <Button
+                    size="sm"
+                    className="mt-3 w-full gap-1"
+                    onClick={() => onAddToCart(product, baguetteSize.price, baguetteSize)}
+                  >
+                    <Plus className="h-4 w-4" /> Agregar
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          }
+
+          return (
+            <Card key={product.id} className="transition-shadow hover:shadow-md">
+              <CardContent className="flex flex-col items-center justify-center p-4 text-center">
+                <h3 className="font-semibold text-foreground">{product.name}</h3>
+                <p className="mt-1 text-lg font-bold text-primary">
+                  ${product.price?.toFixed(0)}
+                </p>
+                <Button
+                  size="sm"
+                  className="mt-3 w-full gap-1"
+                  onClick={() => onAddToCart(product, product.price!, undefined)}
+                >
+                  <Plus className="h-4 w-4" /> Agregar
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     );
   }
@@ -129,7 +199,18 @@ function SectionedProductGrid({
 
       if (sizes.length === 0) return null;
 
-      return <SizedProductCard key={`${product.id}-${title}`} product={product} sizes={sizes} onAdd={onAddToCart} />;
+      // Si es la sección "Sandwiches" (tamaño S único), mostrar de forma simplificada
+      const isSimplified = title === "Sandwiches" && sizes.length === 1;
+
+      return (
+        <SizedProductCard
+          key={`${product.id}-${title}`}
+          product={product}
+          sizes={sizes}
+          onAdd={onAddToCart}
+          isSimplified={isSimplified}
+        />
+      );
     })
     .filter(Boolean);
 
@@ -147,14 +228,37 @@ function SizedProductCard({
   product,
   sizes,
   onAdd,
+  isSimplified = false,
 }: {
   product: Product;
   sizes: ProductSize[];
   onAdd: (product: Product, price: number, size?: ProductSize) => void;
+  isSimplified?: boolean;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const selectedSize = sizes.find((s) => s.id === selected);
 
+  // Simplified view: show only price without size selector
+  if (isSimplified && sizes.length === 1) {
+    const size = sizes[0];
+    return (
+      <Card className="transition-shadow hover:shadow-md">
+        <CardContent className="flex flex-col items-center justify-center p-4 text-center">
+          <h3 className="font-semibold text-foreground">{product.name}</h3>
+          <p className="mt-2 text-lg font-bold text-primary">${size.price.toFixed(0)}</p>
+          <Button
+            size="sm"
+            className="mt-3 w-full gap-1"
+            onClick={() => onAdd(product, size.price, size)}
+          >
+            <Plus className="h-4 w-4" /> Agregar
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Default view: show size selector
   return (
     <Card className="transition-shadow hover:shadow-md">
       <CardContent className="flex flex-col items-center justify-center p-4 text-center">
