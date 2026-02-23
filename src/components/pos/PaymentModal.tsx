@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Printer, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
+import { useBluetoothPrintApp } from "@/hooks/useBluetoothPrintApp";
 
 interface Props {
   open: boolean;
@@ -28,6 +29,7 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
   const [isAutoPrinting, setIsAutoPrinting] = useState(false);
 
   const printer = useBluetootPrinter();
+  const printApp = useBluetoothPrintApp();
 
   const handlePay = async () => {
     if (!customerName.trim()) {
@@ -81,33 +83,41 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
       // Auto-print if enabled
       if (printer.preferences.autoPrint) {
         setIsAutoPrinting(true);
-        const now = new Date();
-        const dateStr = now.toLocaleDateString("es-MX", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-
-        // Print both: kitchen order first, then client ticket
         try {
-          await printer.printKitchenOrder(
-            items,
-            order.order_number,
-            customerName.trim(),
-            dateStr
-          );
-          await printer.printClientTicket(
-            items,
-            total,
-            order.order_number,
-            customerName.trim(),
-            dateStr
-          );
+          // Intentar con Bluetooth Print App primero (más confiable)
+          if (printApp.isBluetoothPrintAppAvailable()) {
+            printApp.printKitchenOrder(items, order.order_number, customerName.trim());
+            // Pequeño delay para que no se sobrecarque
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            printApp.printClientTicket(items, total, order.order_number, customerName.trim());
+          } else {
+            // Fallback a Web Bluetooth
+            const now = new Date();
+            const dateStr = now.toLocaleDateString("es-MX", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+
+            await printer.printKitchenOrder(
+              items,
+              order.order_number,
+              customerName.trim(),
+              dateStr
+            );
+            await printer.printClientTicket(
+              items,
+              total,
+              order.order_number,
+              customerName.trim(),
+              dateStr
+            );
+          }
         } catch (err) {
           console.error("Error en impresión automática:", err);
-          // Don't show error toast, just continue
+          toast.warning("No se pudo imprimir automáticamente");
         } finally {
           setIsAutoPrinting(false);
         }
@@ -122,33 +132,44 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
   const printTicket = async (type: "cliente" | "cocina") => {
     setIsAutoPrinting(true);
     try {
-      const now = new Date();
-      const dateStr = now.toLocaleDateString("es-MX", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-
-      if (type === "cliente") {
-        await printer.printClientTicket(
-          items,
-          total,
-          savedOrderNumber,
-          customerName,
-          dateStr
-        );
+      // Intentar con Bluetooth Print App primero (más confiable)
+      if (printApp.isBluetoothPrintAppAvailable()) {
+        if (type === "cliente") {
+          printApp.printClientTicket(items, total, savedOrderNumber, customerName);
+        } else {
+          printApp.printKitchenOrder(items, savedOrderNumber, customerName);
+        }
       } else {
-        await printer.printKitchenOrder(
-          items,
-          savedOrderNumber,
-          customerName,
-          dateStr
-        );
+        // Fallback a Web Bluetooth
+        const now = new Date();
+        const dateStr = now.toLocaleDateString("es-MX", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+
+        if (type === "cliente") {
+          await printer.printClientTicket(
+            items,
+            total,
+            savedOrderNumber,
+            customerName,
+            dateStr
+          );
+        } else {
+          await printer.printKitchenOrder(
+            items,
+            savedOrderNumber,
+            customerName,
+            dateStr
+          );
+        }
       }
     } catch (err) {
       console.error("Error al imprimir:", err);
+      toast.error("Error al imprimir");
     } finally {
       setIsAutoPrinting(false);
     }
