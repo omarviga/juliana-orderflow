@@ -23,6 +23,9 @@ function escapeHtml(value: string): string {
 /**
  * Genera HTML para ticket de cliente (80mm)
  */
+type ClientTicketStyle = "clasico" | "minimal";
+const CLIENT_TICKET_STYLE: ClientTicketStyle = "clasico";
+
 export function generateClientTicketHTML(
   items: CartItem[],
   total: number,
@@ -33,128 +36,86 @@ export function generateClientTicketHTML(
   const config = PRINTER_CONFIGS["80mm"];
   const safeCustomerName = escapeHtml(customerName || "---");
   const safeDate = escapeHtml(dateStr);
+  const renderedItems = items
+    .map((item) => {
+      const itemLine = `${item.quantity}x ${item.product.name}${item.productSize ? ` (${item.productSize.name})` : ""}`;
+      const safeItemLine = escapeHtml(itemLine);
+      const priceLine = `$${item.subtotal.toFixed(0)}`;
+      const detail = item.customLabel
+        ? `<div class="item-detail">${escapeHtml(item.customLabel)}</div>`
+        : "";
 
-  let html = `
+      return `<div class="item-row"><span class="item-name">${safeItemLine}</span><span class="item-price">${priceLine}</span></div>${detail}`;
+    })
+    .join("");
+
+  if (CLIENT_TICKET_STYLE === "minimal") {
+    return `
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            * { box-sizing: border-box; }
+            body { margin: 0; padding: 0; width: ${config.width}mm; font-family: 'Courier New', monospace; color: #000; }
+            .receipt { padding: 3mm; font-size: 10px; }
+            .center { text-align: center; }
+            .title { font-size: 16px; font-weight: 700; letter-spacing: 1px; }
+            .subtitle { font-size: 10px; font-weight: 700; margin-top: 1mm; }
+            .meta { font-size: 9px; margin-top: 1mm; line-height: 1.35; }
+            .sep { border-top: 1px dashed #000; margin: 2mm 0; }
+            .row { display: flex; justify-content: space-between; gap: 2mm; margin: 1mm 0; }
+            .muted { color: #333; }
+            .item-row { display: flex; justify-content: space-between; gap: 2mm; margin: 1mm 0; }
+            .item-name { font-weight: 700; max-width: 52mm; }
+            .item-price { font-weight: 700; white-space: nowrap; }
+            .item-detail { margin-left: 2mm; font-size: 9px; }
+            .total { border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 1.5mm 0; margin-top: 2mm; font-size: 13px; font-weight: 800; display: flex; justify-content: space-between; }
+          </style>
+        </head>
+        <body>
+          <div class="receipt print-ticket-cliente">
+            <div class="center title">JULIANA</div>
+            <div class="center subtitle">BARRA COTIDIANA</div>
+            <div class="center meta">AV. MIGUEL HIDALGO #276, COL CENTRO, ACAMBARO GTO.<br/>Tel. 417 206 9111</div>
+            <div class="sep"></div>
+            <div class="row"><span class="muted">Pedido</span><strong>#${orderNumber || "---"}</strong></div>
+            <div class="row"><span class="muted">Cliente</span><strong>${safeCustomerName}</strong></div>
+            <div class="row"><span class="muted">Fecha</span><span>${safeDate}</span></div>
+            <div class="sep"></div>
+            ${renderedItems}
+            <div class="total"><span>TOTAL</span><span>$${total.toFixed(0)}</span></div>
+            <div class="center meta" style="margin-top:2mm;">Gracias por visitarnos</div>
+          </div>
+        </body>
+      </html>
+    `;
+  }
+
+  return `
     <html>
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
           * { box-sizing: border-box; }
-          body {
-            margin: 0;
-            padding: 0;
-            background: #ffffff;
-            font-family: 'Trebuchet MS', 'Segoe UI', Arial, sans-serif;
-            width: ${config.width}mm;
-            color: #111111;
-          }
-          .receipt {
-            width: 100%;
-            padding: 3mm;
-          }
-          .brand-top {
-            border: 2px solid #000000;
-            border-radius: 8px;
-            padding: 2.5mm 2mm;
-            text-align: center;
-            margin-bottom: 2mm;
-          }
-          .brand-script {
-            font-size: 20px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-            line-height: 1;
-            color: #000000;
-          }
-          .brand-subtitle {
-            margin-top: 1mm;
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 1.4px;
-            color: #000000;
-          }
-          .brand-meta {
-            margin-top: 1.5mm;
-            font-size: 9px;
-            line-height: 1.35;
-            color: #3a3a3a;
-          }
-          .section-title {
-            margin: 1.2mm 0 1mm;
-            font-size: 9px;
-            font-weight: 700;
-            letter-spacing: 1.1px;
-            text-transform: uppercase;
-            color: #000000;
-          }
-          .order-box {
-            border: 1px solid #d9d9d9;
-            border-radius: 6px;
-            padding: 1.8mm;
-            font-size: 10px;
-          }
-          .order-line {
-            display: flex;
-            justify-content: space-between;
-            gap: 2mm;
-            margin: 0.7mm 0;
-          }
-          .muted {
-            color: #666666;
-          }
-          .items-box {
-            border: 1px dashed #b8b8b8;
-            border-radius: 6px;
-            padding: 1.6mm;
-          }
-          .item-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 2mm;
-            font-size: 10px;
-            margin: 1mm 0;
-          }
-          .item-name {
-            font-weight: 700;
-            color: #111111;
-            max-width: 50mm;
-            line-height: 1.25;
-          }
-          .item-price {
-            font-weight: 700;
-            white-space: nowrap;
-          }
-          .item-detail {
-            margin: 0 0 1mm 2mm;
-            font-size: 9px;
-            color: #5f5f5f;
-            line-height: 1.25;
-          }
-          .item-detail::before {
-            content: "• ";
-            color: #000000;
-          }
-          .total-row {
-            margin-top: 2mm;
-            border: 2px solid #000000;
-            border-radius: 7px;
-            padding: 1.6mm 2mm;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 14px;
-            font-weight: 800;
-            color: #000000;
-          }
-          .footer {
-            margin-top: 2mm;
-            text-align: center;
-            font-size: 9.5px;
-            color: #3f3f3f;
-            line-height: 1.35;
-          }
+          body { margin: 0; padding: 0; background: #fff; font-family: 'Trebuchet MS', 'Segoe UI', Arial, sans-serif; width: ${config.width}mm; color: #111; }
+          .receipt { width: 100%; padding: 3mm; }
+          .brand-top { border: 2px solid #000; border-radius: 8px; padding: 2.5mm 2mm; text-align: center; margin-bottom: 2mm; }
+          .brand-script { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; line-height: 1; color: #000; }
+          .brand-subtitle { margin-top: 1mm; font-size: 10px; font-weight: 700; letter-spacing: 1.4px; color: #000; }
+          .brand-meta { margin-top: 1.5mm; font-size: 9px; line-height: 1.35; color: #3a3a3a; }
+          .section-title { margin: 1.2mm 0 1mm; font-size: 9px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: #000; }
+          .order-box { border: 1px solid #d9d9d9; border-radius: 6px; padding: 1.8mm; font-size: 10px; }
+          .order-line { display: flex; justify-content: space-between; gap: 2mm; margin: 0.7mm 0; }
+          .muted { color: #666; }
+          .items-box { border: 1px dashed #b8b8b8; border-radius: 6px; padding: 1.6mm; }
+          .item-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 2mm; font-size: 10px; margin: 1mm 0; }
+          .item-name { font-weight: 700; color: #111; max-width: 50mm; line-height: 1.25; }
+          .item-price { font-weight: 700; white-space: nowrap; }
+          .item-detail { margin: 0 0 1mm 2mm; font-size: 9px; color: #5f5f5f; line-height: 1.25; }
+          .item-detail::before { content: "• "; color: #000; }
+          .total-row { margin-top: 2mm; border: 2px solid #000; border-radius: 7px; padding: 1.6mm 2mm; display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 800; color: #000; }
+          .footer { margin-top: 2mm; text-align: center; font-size: 9.5px; color: #3f3f3f; line-height: 1.35; }
         </style>
       </head>
       <body>
@@ -162,51 +123,23 @@ export function generateClientTicketHTML(
           <div class="brand-top">
             <div class="brand-script">Juliana</div>
             <div class="brand-subtitle">BARRA COTIDIANA</div>
-            <div class="brand-meta">
-              AV. MIGUEL HIDALGO #276, COL CENTRO, ACAMBARO GTO.<br/>
-              Tel. 417 206 9111
-            </div>
+            <div class="brand-meta">AV. MIGUEL HIDALGO #276, COL CENTRO, ACAMBARO GTO.<br/>Tel. 417 206 9111</div>
           </div>
-
           <div class="section-title">Detalle del pedido</div>
           <div class="order-box">
             <div class="order-line"><span class="muted">Pedido</span><strong>#${orderNumber || "---"}</strong></div>
             <div class="order-line"><span class="muted">Cliente</span><strong>${safeCustomerName}</strong></div>
             <div class="order-line"><span class="muted">Fecha</span><span>${safeDate}</span></div>
           </div>
-
           <div class="section-title">Consumo</div>
-          <div class="items-box">
-  `;
-
-  // Items
-  items.forEach((item) => {
-    const itemLine = `${item.quantity}x ${item.product.name}${item.productSize ? ` (${item.productSize.name})` : ""}`;
-    const safeItemLine = escapeHtml(itemLine);
-    const priceLine = `$${item.subtotal.toFixed(0)}`;
-
-    html += `<div class="item-row"><span class="item-name">${safeItemLine}</span><span class="item-price">${priceLine}</span></div>`;
-
-    if (item.customLabel) {
-      html += `<div class="item-detail">${escapeHtml(item.customLabel)}</div>`;
-    }
-  });
-
-  html += `
-          </div>
-
-          <div class="total-row">
-            <span>TOTAL</span>
-            <span>$${total.toFixed(0)}</span>
-          </div>
+          <div class="items-box">${renderedItems}</div>
+          <div class="total-row"><span>TOTAL</span><span>$${total.toFixed(0)}</span></div>
           <div class="footer">Gracias por visitarnos</div>
           <div class="footer">Te esperamos pronto</div>
         </div>
       </body>
     </html>
   `;
-
-  return html;
 }
 
 /**
