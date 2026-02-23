@@ -30,15 +30,17 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
   const printer = useBluetootPrinter();
 
   const handlePay = async () => {
+    if (!customerName.trim()) {
+      toast.error("Debes ingresar el nombre de la orden");
+      return;
+    }
+
     setSaving(true);
     try {
-      // Use customer name or default to "S/N" if empty
-      const finalCustomerName = customerName.trim() || "S/N";
-
       // Create order
       const { data: order, error: orderError } = await supabase
         .from("orders")
-        .insert({ total, status: "pagado", customer_name: finalCustomerName })
+        .insert({ total, status: "pagado", customer_name: customerName.trim() })
         .select()
         .single();
       if (orderError) throw orderError;
@@ -93,14 +95,14 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
           await printer.printKitchenOrder(
             items,
             order.order_number,
-            finalCustomerName,
+            customerName.trim(),
             dateStr
           );
           await printer.printClientTicket(
             items,
             total,
             order.order_number,
-            finalCustomerName,
+            customerName.trim(),
             dateStr
           );
         } catch (err) {
@@ -173,11 +175,11 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
         {!savedOrderNumber && (
           <div className="space-y-2">
             <label htmlFor="customer-name" className="text-sm font-medium text-foreground">
-              Nombre de la orden <span className="text-xs text-muted-foreground">(opcional)</span>
+              Nombre de la orden *
             </label>
             <Input
               id="customer-name"
-              placeholder="¿A nombre de quién es la orden? (puedes dejar vacío)"
+              placeholder="¿A nombre de quién es la orden?"
               value={customerName}
               onChange={(event) => setCustomerName(event.target.value)}
             />

@@ -110,7 +110,6 @@ export function generateKitchenOrderHTML(
   dateStr: string
 ): string {
   const config = PRINTER_CONFIGS["58mm"];
-  const separator = "=".repeat(config.charsPerLine);
 
   let html = `
     <html>
@@ -121,13 +120,12 @@ export function generateKitchenOrderHTML(
             margin: 0;
             padding: 0;
             font-family: 'Courier New', monospace;
-            font-size: 14px;
-            font-weight: bold;
+            font-size: 13px;
             width: ${config.width}mm;
-            line-height: 1.2;
+            line-height: 1.3;
           }
           .comanda {
-            padding: 2mm;
+            padding: 3mm;
             text-align: center;
             white-space: pre-wrap;
             word-wrap: break-word;
@@ -137,59 +135,102 @@ export function generateKitchenOrderHTML(
             font-weight: bold;
             margin-bottom: 2mm;
             text-transform: uppercase;
+            letter-spacing: 1px;
           }
           .order-info {
-            font-size: 11px;
-            text-align: left;
-            margin: 1mm 0;
-            border-bottom: 1px dashed #000;
-            padding-bottom: 1mm;
-          }
-          .item {
-            text-align: left;
-            font-size: 13px;
-            font-weight: bold;
-            margin: 2mm 0;
-            text-transform: uppercase;
-            border-bottom: 1px dashed #000;
-            padding-bottom: 1mm;
-          }
-          .customization {
             font-size: 12px;
             text-align: left;
-            margin-left: 3mm;
-            font-weight: normal;
+            margin-bottom: 2mm;
+            padding: 1mm 0;
+            border-bottom: 2px solid #000;
+            border-top: 2px solid #000;
           }
-          .qty { font-size: 16px; }
+          .info-line {
+            margin: 1mm 0;
+            font-weight: bold;
+          }
+          .items-section {
+            margin: 2mm 0;
+            text-align: left;
+          }
+          .item-group {
+            margin: 2mm 0;
+            padding: 1mm;
+            border: 1px solid #000;
+            text-align: left;
+          }
+          .item-line {
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin: 1mm 0;
+          }
+          .ingredient {
+            font-size: 11px;
+            font-weight: normal;
+            margin-left: 3mm;
+            margin-top: 0.5mm;
+            text-transform: lowercase;
+          }
+          .ingredient::before {
+            content: "• ";
+            font-weight: bold;
+          }
+          .footer {
+            margin-top: 2mm;
+            padding-top: 1mm;
+            border-top: 2px solid #000;
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+          }
         </style>
       </head>
       <body>
         <div class="comanda">
-          <div class="header">COMANDA #${orderNumber || "---"}</div>
+          <div class="header">🍽️ COMANDA #${orderNumber || "---"}</div>
+          
           <div class="order-info">
-            <div>👤 ${customerName || "---"}</div>
-            <div>🕐 ${dateStr}</div>
+            <div class="info-line">CLIENTE: ${customerName.toUpperCase()}</div>
+            <div class="info-line" style="font-size: 11px; font-weight: normal;">Hora: ${dateStr}</div>
           </div>
+
+          <div class="items-section">
   `;
 
-  // Items
-  items.forEach((item) => {
-    html += `<div class="item"><span class="qty">${item.quantity}x</span> ${item.product.name}${item.productSize ? ` (${item.productSize.name})` : ""}`.toUpperCase() + `</div>`;
+  // Items con ingredientes
+  items.forEach((item, index) => {
+    html += `<div class="item-group">`;
+    html += `<div class="item-line">${item.quantity}x ${item.product.name}${item.productSize ? ` (${item.productSize.name})` : ""}</div>`;
 
+    // Mostrar ingredientes/customizaciones
     if (item.customizations && item.customizations.length > 0) {
+      html += `<div style="margin-top: 0.5mm; margin-left: 2mm;">`;
       item.customizations.forEach((c) => {
-        html += `<div class="customization">• ${c.ingredient.name}</div>`;
+        html += `<div class="ingredient">${c.ingredient.name}</div>`;
       });
+      html += `</div>`;
     }
 
+    // Mostrar instrucciones personalizadas
     if (item.customLabel) {
-      html += `<div class="customization">📝 ${item.customLabel}</div>`;
+      html += `<div class="ingredient" style="margin-top: 0.5mm; font-style: italic; color: #000;">📝 ${item.customLabel}</div>`;
     }
+
+    // Si no tiene ingredientes
+    if ((!item.customizations || item.customizations.length === 0) && !item.customLabel) {
+      html += `<div class="ingredient">Sin modificaciones</div>`;
+    }
+
+    html += `</div>`;
   });
 
   html += `
-          <div style="margin-top: 3mm; border-top: 2px solid #000; padding-top: 2mm; font-size: 11px; text-align: center;">
-            PREPARAR AHORA
+          </div>
+
+          <div class="footer">
+            ⏱️ PREPARAR YA
           </div>
         </div>
       </body>
