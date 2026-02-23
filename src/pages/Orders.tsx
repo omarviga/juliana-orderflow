@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useOrders } from "@/hooks/useOrders";
+import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -28,8 +29,10 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { ChevronRight, X } from "lucide-react";
+import { ChevronRight, Printer } from "lucide-react";
 import type { OrderWithItems } from "@/hooks/useOrders";
+import { getCashRegisterSales, getTodaySalesRange } from "@/lib/cash-register";
+import { toast } from "sonner";
 
 export default function OrdersPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -39,6 +42,7 @@ export default function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<OrderWithItems | null>(
     null
   );
+  const printer = useBluetootPrinter();
 
   const { orders, isLoading, updateOrderStatus, isUpdating } = useOrders({
     status: statusFilter === "all" ? undefined : statusFilter,
@@ -69,6 +73,26 @@ export default function OrdersPage() {
       default:
         return status;
     }
+  };
+
+  const handlePrintCashCutToday = async () => {
+    const { from, to } = getTodaySalesRange();
+    const todaySales = getCashRegisterSales({ dateFrom: from, dateTo: to });
+
+    if (todaySales.length === 0) {
+      toast.info("No hay ventas registradas hoy para corte de caja.");
+      return;
+    }
+
+    const generatedAt = new Date().toLocaleDateString("es-MX", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    await printer.printCashCutTicket(todaySales, generatedAt, "CORTE DE CAJA (HOY)");
   };
 
   return (
@@ -116,6 +140,16 @@ export default function OrdersPage() {
             </SelectContent>
           </Select>
         </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="gap-2 sm:ml-auto"
+          onClick={handlePrintCashCutToday}
+        >
+          <Printer className="h-4 w-4" />
+          Corte de Caja (Hoy)
+        </Button>
       </div>
 
       {/* Tabla de Pedidos */}

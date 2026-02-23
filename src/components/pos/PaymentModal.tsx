@@ -14,6 +14,11 @@ import { Printer, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
 import { useBluetoothPrintApp } from "@/hooks/useBluetoothPrintApp";
+import {
+  getPaymentMethodLabel,
+  registerPaidSale,
+  type PaymentMethod,
+} from "@/lib/cash-register";
 
 interface Props {
   open: boolean;
@@ -27,6 +32,7 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
   const [saving, setSaving] = useState(false);
   const [savedOrderNumber, setSavedOrderNumber] = useState<number | null>(null);
   const [customerName, setCustomerName] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
   const [isAutoPrinting, setIsAutoPrinting] = useState(false);
 
   const printer = useBluetootPrinter();
@@ -52,7 +58,8 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
         total,
         orderNumber,
         orderCustomerName,
-        dateStr
+        dateStr,
+        getPaymentMethodLabel(paymentMethod)
       );
       return;
     }
@@ -107,6 +114,14 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
       }
 
       setSavedOrderNumber(order.order_number);
+      registerPaidSale({
+        orderId: order.id,
+        orderNumber: order.order_number,
+        customerName: customerName.trim(),
+        total,
+        paymentMethod,
+        createdAt: order.created_at,
+      });
       toast.success(`Pedido #${order.order_number} guardado`);
 
       // Auto-print if enabled
@@ -184,6 +199,7 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
     }
     setSavedOrderNumber(null);
     setCustomerName("");
+    setPaymentMethod("efectivo");
     onClose();
   };
 
@@ -200,16 +216,38 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
         </DialogHeader>
 
         {!savedOrderNumber && (
-          <div className="space-y-2">
-            <label htmlFor="customer-name" className="text-sm font-medium text-foreground">
-              Nombre de la orden *
-            </label>
-            <Input
-              id="customer-name"
-              placeholder="¿A nombre de quién es la orden?"
-              value={customerName}
-              onChange={(event) => setCustomerName(event.target.value)}
-            />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="customer-name" className="text-sm font-medium text-foreground">
+                Nombre de la orden *
+              </label>
+              <Input
+                id="customer-name"
+                placeholder="¿A nombre de quién es la orden?"
+                value={customerName}
+                onChange={(event) => setCustomerName(event.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Método de pago</label>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={paymentMethod === "efectivo" ? "default" : "outline"}
+                  onClick={() => setPaymentMethod("efectivo")}
+                >
+                  Efectivo
+                </Button>
+                <Button
+                  type="button"
+                  variant={paymentMethod === "tarjeta" ? "default" : "outline"}
+                  onClick={() => setPaymentMethod("tarjeta")}
+                >
+                  Tarjeta
+                </Button>
+              </div>
+            </div>
           </div>
         )}
 

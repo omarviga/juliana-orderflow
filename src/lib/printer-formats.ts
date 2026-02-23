@@ -1,4 +1,5 @@
 import type { CartItem } from "@/types/pos";
+import type { CashRegisterSale } from "@/lib/cash-register";
 
 interface PrinterConfig {
   width: number; // mm
@@ -31,7 +32,8 @@ export function generateClientTicketHTML(
   total: number,
   orderNumber: number | null,
   customerName: string,
-  dateStr: string
+  dateStr: string,
+  paymentMethodLabel: string = "Efectivo"
 ): string {
   const config = PRINTER_CONFIGS["80mm"];
   const safeCustomerName = escapeHtml(customerName || "---");
@@ -81,6 +83,7 @@ export function generateClientTicketHTML(
             <div class="row"><span class="muted">Pedido</span><strong>#${orderNumber || "---"}</strong></div>
             <div class="row"><span class="muted">Cliente</span><strong>${safeCustomerName}</strong></div>
             <div class="row"><span class="muted">Fecha</span><span>${safeDate}</span></div>
+            <div class="row"><span class="muted">Pago</span><strong>${escapeHtml(paymentMethodLabel)}</strong></div>
             <div class="sep"></div>
             ${renderedItems}
             <div class="total"><span>TOTAL</span><span>$${total.toFixed(0)}</span></div>
@@ -130,12 +133,92 @@ export function generateClientTicketHTML(
             <div class="order-line"><span class="muted">Pedido</span><strong>#${orderNumber || "---"}</strong></div>
             <div class="order-line"><span class="muted">Cliente</span><strong>${safeCustomerName}</strong></div>
             <div class="order-line"><span class="muted">Fecha</span><span>${safeDate}</span></div>
+            <div class="order-line"><span class="muted">Pago</span><strong>${escapeHtml(paymentMethodLabel)}</strong></div>
           </div>
           <div class="section-title">Consumo</div>
           <div class="items-box">${renderedItems}</div>
           <div class="total-row"><span>TOTAL</span><span>$${total.toFixed(0)}</span></div>
           <div class="footer">Gracias por visitarnos</div>
           <div class="footer">Te esperamos pronto</div>
+        </div>
+      </body>
+    </html>
+  `;
+}
+
+export function generateCashCutTicketHTML(
+  sales: CashRegisterSale[],
+  generatedAt: string,
+  title: string = "CORTE DE CAJA"
+): string {
+  const config = PRINTER_CONFIGS["80mm"];
+  const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
+  const cashSales = sales.filter((s) => s.paymentMethod === "efectivo");
+  const cardSales = sales.filter((s) => s.paymentMethod === "tarjeta");
+  const cashTotal = cashSales.reduce((sum, sale) => sum + sale.total, 0);
+  const cardTotal = cardSales.reduce((sum, sale) => sum + sale.total, 0);
+
+  const saleRows = sales
+    .map((sale) => {
+      const hour = new Date(sale.createdAt).toLocaleTimeString("es-MX", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      const pay = sale.paymentMethod === "tarjeta" ? "TARJETA" : "EFECTIVO";
+      return `
+        <div class="sale-row">
+          <div class="sale-main">
+            <span>#${sale.orderNumber}</span>
+            <span>${pay}</span>
+            <span>$${sale.total.toFixed(0)}</span>
+          </div>
+          <div class="sale-meta">${hour} · ${escapeHtml(sale.customerName || "Sin nombre")}</div>
+        </div>
+      `;
+    })
+    .join("");
+
+  return `
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          * { box-sizing: border-box; }
+          body { margin: 0; padding: 0; width: ${config.width}mm; font-family: 'Courier New', monospace; color: #000; }
+          .ticket { padding: 3mm; font-size: 10px; }
+          .center { text-align: center; }
+          .title { font-size: 15px; font-weight: 800; letter-spacing: 0.8px; }
+          .subtitle { font-size: 10px; margin-top: 1mm; }
+          .sep { border-top: 1px dashed #000; margin: 2mm 0; }
+          .summary-box { border: 1px solid #000; padding: 1.5mm; }
+          .row { display: flex; justify-content: space-between; gap: 2mm; margin: 0.8mm 0; }
+          .row strong { font-weight: 800; }
+          .sales-title { font-weight: 800; margin-bottom: 1mm; }
+          .sale-row { border-bottom: 1px dotted #000; padding: 1mm 0; }
+          .sale-main { display: flex; justify-content: space-between; font-weight: 700; }
+          .sale-meta { font-size: 9px; margin-top: 0.5mm; color: #333; }
+          .total-row { margin-top: 2mm; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 1.5mm 0; display: flex; justify-content: space-between; font-size: 14px; font-weight: 800; }
+        </style>
+      </head>
+      <body>
+        <div class="ticket print-ticket-cliente">
+          <div class="center title">${escapeHtml(title)}</div>
+          <div class="center subtitle">JULIANA · BARRA COTIDIANA</div>
+          <div class="center subtitle">${escapeHtml(generatedAt)}</div>
+          <div class="sep"></div>
+
+          <div class="summary-box">
+            <div class="row"><span>Ventas (tickets)</span><strong>${sales.length}</strong></div>
+            <div class="row"><span>Efectivo</span><strong>$${cashTotal.toFixed(0)}</strong></div>
+            <div class="row"><span>Tarjeta</span><strong>$${cardTotal.toFixed(0)}</strong></div>
+          </div>
+
+          <div class="sep"></div>
+          <div class="sales-title">DETALLE DE VENTAS</div>
+          ${saleRows || "<div class='sale-meta'>Sin ventas registradas.</div>"}
+
+          <div class="total-row"><span>TOTAL</span><span>$${totalSales.toFixed(0)}</span></div>
         </div>
       </body>
     </html>

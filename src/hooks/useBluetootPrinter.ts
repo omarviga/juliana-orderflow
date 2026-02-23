@@ -2,11 +2,13 @@ import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import {
   generateClientTicketHTML,
+  generateCashCutTicketHTML,
   generateKitchenOrderHTML,
   printToDevice,
   printViaBrowser,
 } from "@/lib/printer-formats";
 import type { CartItem } from "@/types/pos";
+import type { CashRegisterSale } from "@/lib/cash-register";
 
 interface PrinterDevice {
   address: string;
@@ -180,7 +182,8 @@ export function useBluetootPrinter() {
       total: number,
       orderNumber: number | null,
       customerName: string,
-      dateStr: string
+      dateStr: string,
+      paymentMethodLabel: string = "Efectivo"
     ) => {
       const printJob = async () => {
         try {
@@ -189,7 +192,8 @@ export function useBluetootPrinter() {
             total,
             orderNumber,
             customerName,
-            dateStr
+            dateStr,
+            paymentMethodLabel
           );
 
           if (
@@ -216,6 +220,48 @@ export function useBluetootPrinter() {
         } catch (error) {
           console.error("Error al imprimir ticket:", error);
           toast.error("Error al imprimir ticket");
+          throw error;
+        }
+      };
+
+      setPrintQueue((prev) => [...prev, printJob]);
+    },
+    [preferences]
+  );
+
+  const printCashCutTicket = useCallback(
+    async (
+      sales: CashRegisterSale[],
+      generatedAt: string,
+      title: string = "CORTE DE CAJA"
+    ) => {
+      const printJob = async () => {
+        try {
+          const htmlContent = generateCashCutTicketHTML(sales, generatedAt, title);
+
+          if (
+            preferences.useBluetoothIfAvailable &&
+            preferences.clientPrinter80mm
+          ) {
+            try {
+              await printToDevice(
+                preferences.clientPrinter80mm.address,
+                htmlContent,
+                "80mm"
+              );
+              toast.success("Corte de caja impreso");
+              return;
+            } catch (error) {
+              console.error("Error Bluetooth en corte de caja:", error);
+              if (!preferences.fallbackToWeb) throw error;
+            }
+          }
+
+          printViaBrowser(htmlContent, title);
+          toast.success("Corte de caja listo para imprimir");
+        } catch (error) {
+          console.error("Error al imprimir corte de caja:", error);
+          toast.error("Error al imprimir corte de caja");
           throw error;
         }
       };
@@ -313,6 +359,7 @@ export function useBluetootPrinter() {
     unpairClientPrinter,
     unpairKitchenPrinter,
     printClientTicket,
+    printCashCutTicket,
     printKitchenOrder,
     printBoth,
     isPrinting,
