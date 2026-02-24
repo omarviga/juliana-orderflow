@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,11 @@ import {
   registerPaidSale,
   type PaymentMethod,
 } from "@/lib/cash-register";
+import {
+  enqueueOfflineOrder,
+  syncPendingOfflineOrders,
+  type OfflineOrderPayload,
+} from "@/lib/offline-orders";
 
 interface Props {
   open: boolean;
@@ -34,9 +39,60 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
   const [customerName, setCustomerName] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
   const [isAutoPrinting, setIsAutoPrinting] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [allowManualNameInput, setAllowManualNameInput] = useState(false);
 
   const printer = useBluetootPrinter();
   const printApp = useBluetoothPrintApp();
+  const quickNames = ["Mostrador", "Para llevar", "Mesa 1", "Mesa 2", "Mesa 3", "Rappi", "Uber"];
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsTouchDevice(window.matchMedia("(pointer: coarse)").matches);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const syncWhenOnline = async () => {
+      const result = await syncPendingOfflineOrders();
+      if (result.synced > 0) {
+        toast.success(`Se sincronizaron ${result.synced} pedidos pendientes`);
+      }
+    };
+
+    void syncWhenOnline();
+    window.addEventListener("online", syncWhenOnline);
+    return () => window.removeEventListener("online", syncWhenOnline);
+  }, []);
+
+  const blurActiveElement = () => {
+    if (typeof document === "undefined") return;
+    const active = document.activeElement as HTMLElement | null;
+    active?.blur();
+  };
+
+  const isNetworkError = (error: unknown) => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) return true;
+    if (!(error instanceof Error)) return false;
+    const msg = error.message.toLowerCase();
+    return msg.includes("fetch") || msg.includes("network") || msg.includes("failed to fetch");
+  };
+
+  const buildOfflinePayload = (normalizedCustomerName: string): Omit<OfflineOrderPayload, "localId" | "localOrderNumber" | "createdAt"> => ({
+    customerName: normalizedCustomerName,
+    total,
+    paymentMethod,
+    items: items.map((item) => ({
+      productId: item.product.id,
+      productSizeId: item.productSize?.id || null,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      subtotal: item.subtotal,
+      customLabel: item.customLabel || null,
+      customizationIngredientIds: (item.customizations || []).map((c) => c.ingredient.id),
+    })),
+  });
 
   const printWithWebFallback = async (
     type: "cliente" | "cocina",
@@ -68,17 +124,15 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
   };
 
   const handlePay = async () => {
-    if (!customerName.trim()) {
-      toast.error("Debes ingresar el nombre de la orden");
-      return;
-    }
+    const normalizedCustomerName = customerName.trim() || "Mostrador";
+    blurActiveElement();
 
     setSaving(true);
     try {
       // Create order
       const { data: order, error: orderError } = await supabase
         .from("orders")
-        .insert({ total, status: "pagado", customer_name: customerName.trim() })
+        .insert({ total, status: "pagado", customer_name: normalizedCustomerName })
         .select()
         .single();
       if (orderError) throw orderError;
@@ -117,7 +171,7 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
       registerPaidSale({
         orderId: order.id,
         orderNumber: order.order_number,
-        customerName: customerName.trim(),
+        customerName: normalizedCustomerName,
         total,
         paymentMethod,
         createdAt: order.created_at,
@@ -133,10 +187,10 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
 
           if (printApp.isBluetoothPrintAppAvailable()) {
             const kitchenPrinted = await printApp.printKitchenOrder(
-              items,
-              order.order_number,
-              customerName.trim()
-            );
+                items,
+                order.order_number,
+                normalizedCustomerName
+              );
 
             if (kitchenPrinted) {
               await new Promise((resolve) => setTimeout(resolve, 500));
@@ -144,15 +198,15 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
                 items,
                 total,
                 order.order_number,
-                customerName.trim()
+                normalizedCustomerName
               );
               printedWithApp = clientPrinted;
             }
           }
 
           if (!printedWithApp) {
-            await printWithWebFallback("cocina", order.order_number, customerName.trim());
-            await printWithWebFallback("cliente", order.order_number, customerName.trim());
+            await printWithWebFallback("cocina", order.order_number, normalizedCustomerName);
+            await printWithWebFallback("cliente", order.order_number, normalizedCustomerName);
           }
         } catch (err) {
           console.error("Error en impresión automática:", err);
@@ -162,6 +216,23 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
         }
       }
     } catch (err: unknown) {
+      if (isNetworkError(err)) {
+        const offlineOrder = enqueueOfflineOrder(buildOfflinePayload(normalizedCustomerName));
+        setSavedOrderNumber(offlineOrder.localOrderNumber);
+        setCustomerName(normalizedCustomerName);
+        registerPaidSale({
+          orderId: offlineOrder.localId,
+          orderNumber: offlineOrder.localOrderNumber,
+          customerName: normalizedCustomerName,
+          total,
+          paymentMethod,
+          createdAt: offlineOrder.createdAt,
+        });
+        toast.warning(
+          `Sin internet: pedido #${offlineOrder.localOrderNumber} guardado localmente y pendiente de sincronizar`
+        );
+        return;
+      }
       const message = err instanceof Error ? err.message : "Error desconocido";
       toast.error("Error al guardar: " + message);
     } finally {
@@ -200,6 +271,8 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
     setSavedOrderNumber(null);
     setCustomerName("");
     setPaymentMethod("efectivo");
+    setAllowManualNameInput(false);
+    blurActiveElement();
     onClose();
   };
 
@@ -226,7 +299,46 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
                 placeholder="¿A nombre de quién es la orden?"
                 value={customerName}
                 onChange={(event) => setCustomerName(event.target.value)}
+                onFocus={() => {
+                  if (isTouchDevice && !allowManualNameInput) {
+                    blurActiveElement();
+                  }
+                }}
+                readOnly={isTouchDevice && !allowManualNameInput}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="words"
+                enterKeyHint="done"
               />
+              <div className="flex flex-wrap gap-2">
+                {quickNames.map((label) => (
+                  <Button
+                    key={label}
+                    type="button"
+                    variant={customerName === label ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setCustomerName(label);
+                      blurActiveElement();
+                    }}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              {isTouchDevice && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setAllowManualNameInput((prev) => !prev);
+                    blurActiveElement();
+                  }}
+                >
+                  {allowManualNameInput ? "Ocultar teclado" : "Escribir nombre manual"}
+                </Button>
+              )}
             </div>
 
             <div className="space-y-2">

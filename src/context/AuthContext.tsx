@@ -44,32 +44,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let isMounted = true;
 
     const loadInitialSession = async () => {
-      const {
-        data: { session: initialSession },
-      } = await supabase.auth.getSession();
+      try {
+        const {
+          data: { session: initialSession },
+        } = await supabase.auth.getSession();
 
-      if (!isMounted) return;
+        if (!isMounted) return;
 
-      setSession(initialSession);
-      setUser(initialSession?.user ?? null);
+        setSession(initialSession);
+        setUser(initialSession?.user ?? null);
 
-      if (initialSession?.user?.id) {
-        try {
-          const userRole = await fetchUserRole(initialSession.user.id);
-          if (isMounted) {
-            setRole(userRole);
+        if (initialSession?.user?.id) {
+          try {
+            const userRole = await fetchUserRole(initialSession.user.id);
+            if (isMounted) {
+              setRole(userRole);
+            }
+          } catch {
+            if (isMounted) {
+              setRole(null);
+            }
           }
-        } catch {
-          if (isMounted) {
-            setRole(null);
-          }
+        } else {
+          setRole(null);
         }
-      } else {
-        setRole(null);
-      }
-
-      if (isMounted) {
-        setIsLoading(false);
+      } catch {
+        if (isMounted) {
+          setSession(null);
+          setUser(null);
+          setRole(null);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 

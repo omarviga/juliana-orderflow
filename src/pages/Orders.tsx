@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useOrders } from "@/hooks/useOrders";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
@@ -68,7 +68,13 @@ export default function OrdersPage() {
   const [cashCutOpen, setCashCutOpen] = useState(false);
   const [cashCounts, setCashCounts] = useState<Record<string, number>>(createInitialCounts);
   const [salesForCut, setSalesForCut] = useState<CashRegisterSale[]>([]);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
   const printer = useBluetootPrinter();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsTouchDevice(window.matchMedia("(pointer: coarse)").matches);
+  }, []);
 
   const { orders, isLoading, updateOrderStatus, isUpdating } = useOrders({
     status: statusFilter === "all" ? undefined : statusFilter,
@@ -132,6 +138,11 @@ export default function OrdersPage() {
     if (todaySales.length === 0) {
       toast.info("No hay ventas registradas hoy. Puedes capturar conteo e imprimir en cero.");
     }
+  };
+
+  const setDenominationCount = (key: string, nextValue: number) => {
+    const safeValue = Number.isFinite(nextValue) && nextValue > 0 ? Math.floor(nextValue) : 0;
+    setCashCounts((prev) => ({ ...prev, [key]: safeValue }));
   };
 
   const handlePrintCashCutToday = async () => {
@@ -321,17 +332,40 @@ export default function OrdersPage() {
                     <TableRow key={denomination.key}>
                       <TableCell>{denomination.label}</TableCell>
                       <TableCell className="text-right">
-                        <Input
-                          type="number"
-                          min="0"
-                          value={quantity}
-                          className="h-8 text-right"
-                          onChange={(event) => {
-                            const raw = Number.parseInt(event.target.value || "0", 10);
-                            const next = Number.isNaN(raw) || raw < 0 ? 0 : raw;
-                            setCashCounts((prev) => ({ ...prev, [denomination.key]: next }));
-                          }}
-                        />
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 w-8 px-0"
+                            onClick={() => setDenominationCount(denomination.key, quantity - 1)}
+                          >
+                            -
+                          </Button>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={quantity}
+                            className="h-8 w-20 text-right"
+                            readOnly={isTouchDevice}
+                            inputMode="numeric"
+                            enterKeyHint="done"
+                            onChange={(event) => {
+                              const raw = Number.parseInt(event.target.value || "0", 10);
+                              const next = Number.isNaN(raw) || raw < 0 ? 0 : raw;
+                              setDenominationCount(denomination.key, next);
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 w-8 px-0"
+                            onClick={() => setDenominationCount(denomination.key, quantity + 1)}
+                          >
+                            +
+                          </Button>
+                        </div>
                       </TableCell>
                       <TableCell className="text-right font-medium">
                         ${subtotal.toFixed(2)}

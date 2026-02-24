@@ -13,7 +13,11 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   const location = useLocation();
 
   if (isLoading) {
-    return null;
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+        Cargando sesión...
+      </div>
+    );
   }
 
   if (!user) {
@@ -26,4 +30,3 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
 
   return children;
 }
-
