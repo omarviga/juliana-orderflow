@@ -10,11 +10,13 @@ const BEVERAGE_PRICE_OVERRIDES: Record<string, number> = {
   "AGUA EMBOTELLADA": 15,
   "AGUA GASIFICADA": 27,
   REFRESCO: 27,
-  "CAFE AMERICANO": 20,
+  "CAFE AMERICANO": 40,
   CAPUCHINO: 65,
   "CAFE LATTE": 55,
   "CAFE HELADO": 40,
 };
+
+const HIDDEN_BEVERAGE_NAMES = new Set(["TE"]);
 
 const normalizeText = (value: string) =>
   value
@@ -56,6 +58,9 @@ export function ProductGrid({
   const isBaguetteCategory = normalizedCategory.includes("baguette");
   const isHouseSaladCategory = normalizedCategory.includes("ensaladas");
   const isBeverageCategory = normalizedCategory.includes("bebida");
+  const visibleProducts = isBeverageCategory
+    ? products.filter((product) => !HIDDEN_BEVERAGE_NAMES.has(normalizeText(product.name)))
+    : products;
 
   if (isSandwichCategory) {
     return (
@@ -74,7 +79,7 @@ export function ProductGrid({
   if (isBaguetteCategory) {
     return (
       <div className="grid grid-cols-2 gap-3 p-3 lg:grid-cols-3">
-        {products.map((product) => {
+        {visibleProducts.map((product) => {
           const sizes = productSizes.filter((s) => s.product_id === product.id);
           const hasSizes = sizes.length > 0;
 
@@ -150,7 +155,7 @@ export function ProductGrid({
 
   return (
     <div className="grid grid-cols-2 gap-3 p-3 lg:grid-cols-3">
-      {products.map((product) => {
+      {visibleProducts.map((product) => {
         const sizes = productSizes.filter((s) => s.product_id === product.id);
         const hasSizes = sizes.length > 0;
 
