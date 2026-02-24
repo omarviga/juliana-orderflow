@@ -17,6 +17,10 @@ const BEVERAGE_PRICE_OVERRIDES: Record<string, number> = {
 };
 
 const HIDDEN_BEVERAGE_NAMES = new Set(["TE"]);
+const REQUIRED_BEVERAGES = [
+  { name: "Café Latte", price: 55 },
+  { name: "Café Helado", price: 40 },
+];
 
 const normalizeText = (value: string) =>
   value
@@ -61,6 +65,28 @@ export function ProductGrid({
   const visibleProducts = isBeverageCategory
     ? products.filter((product) => !HIDDEN_BEVERAGE_NAMES.has(normalizeText(product.name)))
     : products;
+  const displayProducts = (() => {
+    if (!isBeverageCategory) return visibleProducts;
+
+    const existingNames = new Set(visibleProducts.map((product) => normalizeText(product.name)));
+    const categoryId = visibleProducts[0]?.category_id || products[0]?.category_id || "";
+    const createdAt = new Date().toISOString();
+
+    const injectedProducts = REQUIRED_BEVERAGES
+      .filter((beverage) => !existingNames.has(normalizeText(beverage.name)))
+      .map((beverage, index) => ({
+        id: `virtual-beverage-${normalizeText(beverage.name)}`,
+        category_id: categoryId,
+        created_at: createdAt,
+        description: null,
+        display_order: 9000 + index,
+        is_customizable: false,
+        name: beverage.name,
+        price: beverage.price,
+      } as Product));
+
+    return [...visibleProducts, ...injectedProducts];
+  })();
 
   if (isSandwichCategory) {
     return (
@@ -79,7 +105,7 @@ export function ProductGrid({
   if (isBaguetteCategory) {
     return (
       <div className="grid grid-cols-2 gap-3 p-3 lg:grid-cols-3">
-        {visibleProducts.map((product) => {
+        {displayProducts.map((product) => {
           const sizes = productSizes.filter((s) => s.product_id === product.id);
           const hasSizes = sizes.length > 0;
 
@@ -155,7 +181,7 @@ export function ProductGrid({
 
   return (
     <div className="grid grid-cols-2 gap-3 p-3 lg:grid-cols-3">
-      {visibleProducts.map((product) => {
+      {displayProducts.map((product) => {
         const sizes = productSizes.filter((s) => s.product_id === product.id);
         const hasSizes = sizes.length > 0;
 
