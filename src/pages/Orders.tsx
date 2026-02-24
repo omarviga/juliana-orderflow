@@ -33,7 +33,10 @@ import { ChevronRight, Printer } from "lucide-react";
 import type { OrderWithItems } from "@/hooks/useOrders";
 import {
   getCashRegisterSales,
+  getCashWithdrawals,
   getTodaySalesRange,
+  registerCashWithdrawal,
+  type CashWithdrawal,
   type CashRegisterSale,
 } from "@/lib/cash-register";
 import { toast } from "sonner";
@@ -67,10 +70,14 @@ export default function OrdersPage() {
     null
   );
   const [cashCutOpen, setCashCutOpen] = useState(false);
+  const [withdrawalOpen, setWithdrawalOpen] = useState(false);
   const [cashCounts, setCashCounts] = useState<Record<string, number>>(createInitialCounts);
   const [salesForCut, setSalesForCut] = useState<CashRegisterSale[]>([]);
+  const [withdrawalsForCut, setWithdrawalsForCut] = useState<CashWithdrawal[]>([]);
   const [isFallbackSales, setIsFallbackSales] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [withdrawalAmount, setWithdrawalAmount] = useState("");
+  const [withdrawalReason, setWithdrawalReason] = useState("");
   const printer = useBluetootPrinter();
 
   useEffect(() => {
@@ -126,11 +133,20 @@ export default function OrdersPage() {
     [cashCounts]
   );
 
-  const cashDifference = countedCash - expectedCash;
+  const totalWithdrawals = useMemo(
+    () => withdrawalsForCut.reduce((sum, entry) => sum + entry.amount, 0),
+    [withdrawalsForCut]
+  );
+  const expectedCashNet = expectedCash - totalWithdrawals;
+  const cashDifference = countedCash - expectedCashNet;
 
   const loadTodaySales = () => {
     const { from, to } = getTodaySalesRange();
     return getCashRegisterSales({ dateFrom: from, dateTo: to });
+  };
+  const loadTodayWithdrawals = () => {
+    const { from, to } = getTodaySalesRange();
+    return getCashWithdrawals({ dateFrom: from, dateTo: to });
   };
 
   const loadTodayPaidOrdersFallback = async (): Promise<CashRegisterSale[]> => {
@@ -160,6 +176,8 @@ export default function OrdersPage() {
 
   const handleOpenCashCut = async () => {
     const todaySales = loadTodaySales();
+    const todayWithdrawals = loadTodayWithdrawals();
+    setWithdrawalsForCut(todayWithdrawals);
     if (todaySales.length > 0) {
       setIsFallbackSales(false);
       setSalesForCut(todaySales);
@@ -181,9 +199,31 @@ export default function OrdersPage() {
     } catch {
       setIsFallbackSales(false);
       setSalesForCut([]);
+      setWithdrawalsForCut(todayWithdrawals);
       setCashCutOpen(true);
       toast.error("No se pudieron cargar las ventas del día.");
     }
+  };
+
+  const handleRegisterWithdrawal = () => {
+    const amount = Number.parseFloat(withdrawalAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Ingresa un monto válido para retirar.");
+      return;
+    }
+
+    const saved = registerCashWithdrawal({
+      amount,
+      reason: withdrawalReason.trim() || "Retiro de caja",
+    });
+
+    setWithdrawalsForCut(loadTodayWithdrawals());
+    setWithdrawalAmount("");
+    setWithdrawalReason("");
+    setWithdrawalOpen(false);
+    toast.success(
+      `Retiro registrado por $${saved.amount.toFixed(2)} (${saved.reason})`
+    );
   };
 
   const setDenominationCount = (key: string, nextValue: number) => {
@@ -201,7 +241,7 @@ export default function OrdersPage() {
     });
 
     await printer.printCashCutTicket(salesForCut, generatedAt, "CORTE DE CAJA (HOY)", {
-      expectedCash,
+      expectedCash: expectedCashNet,
       countedCash,
       difference: cashDifference,
       entries: CASH_DENOMINATIONS.map((denomination) => ({
@@ -261,7 +301,16 @@ export default function OrdersPage() {
         <Button
           type="button"
           variant="outline"
-          className="gap-2 sm:ml-auto"
+          className="sm:ml-auto"
+          onClick={() => setWithdrawalOpen(true)}
+        >
+          Retirar Efectivo
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          className="gap-2"
           onClick={handleOpenCashCut}
         >
           <Printer className="h-4 w-4" />
@@ -351,14 +400,18 @@ export default function OrdersPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Ventas registradas</p>
               <p className="text-xl font-bold text-foreground">{salesForCut.length}</p>
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Efectivo esperado</p>
-              <p className="text-xl font-bold text-foreground">${expectedCash.toFixed(0)}</p>
+              <p className="text-xl font-bold text-foreground">${expectedCashNet.toFixed(0)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Retiros de efectivo</p>
+              <p className="text-xl font-bold text-amber-700">${totalWithdrawals.toFixed(2)}</p>
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Efectivo contado</p>
@@ -429,7 +482,7 @@ export default function OrdersPage() {
           </div>
 
           <div className="flex items-center justify-between rounded-lg border p-3">
-            <span className="text-sm font-medium text-foreground">Diferencia (contado - esperado)</span>
+            <span className="text-sm font-medium text-foreground">Diferencia (contado - esperado neto)</span>
             <span
               className={`text-lg font-bold ${cashDifference < 0 ? "text-red-600" : cashDifference > 0 ? "text-amber-600" : "text-green-600"}`}
             >
@@ -447,6 +500,41 @@ export default function OrdersPage() {
             <Button className="ml-auto gap-2" onClick={handlePrintCashCutToday}>
               <Printer className="h-4 w-4" />
               Imprimir corte 80mm
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={withdrawalOpen} onOpenChange={setWithdrawalOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Retiro de Efectivo</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Monto</label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={withdrawalAmount}
+                onChange={(event) => setWithdrawalAmount(event.target.value)}
+                placeholder="Ej. 500"
+                inputMode="decimal"
+                enterKeyHint="done"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Motivo</label>
+              <Input
+                value={withdrawalReason}
+                onChange={(event) => setWithdrawalReason(event.target.value)}
+                placeholder="Caja chica, depósito, etc."
+              />
+            </div>
+            <Button className="w-full" onClick={handleRegisterWithdrawal}>
+              Guardar retiro
             </Button>
           </div>
         </DialogContent>
