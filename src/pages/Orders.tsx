@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useOrders } from "@/hooks/useOrders";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
@@ -31,8 +31,31 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { ChevronRight, Printer } from "lucide-react";
 import type { OrderWithItems } from "@/hooks/useOrders";
-import { getCashRegisterSales, getTodaySalesRange } from "@/lib/cash-register";
+import {
+  getCashRegisterSales,
+  getTodaySalesRange,
+  type CashRegisterSale,
+} from "@/lib/cash-register";
 import { toast } from "sonner";
+
+const CASH_DENOMINATIONS = [
+  { key: "1000", label: "Billete $1000", value: 1000 },
+  { key: "500", label: "Billete $500", value: 500 },
+  { key: "200", label: "Billete $200", value: 200 },
+  { key: "100", label: "Billete $100", value: 100 },
+  { key: "50b", label: "Billete $50", value: 50 },
+  { key: "20b", label: "Billete $20", value: 20 },
+  { key: "20m", label: "Moneda $20", value: 20 },
+  { key: "10m", label: "Moneda $10", value: 10 },
+  { key: "5m", label: "Moneda $5", value: 5 },
+  { key: "2m", label: "Moneda $2", value: 2 },
+  { key: "1m", label: "Moneda $1", value: 1 },
+  { key: "050m", label: "Moneda $0.50", value: 0.5 },
+];
+
+function createInitialCounts(): Record<string, number> {
+  return Object.fromEntries(CASH_DENOMINATIONS.map((den) => [den.key, 0]));
+}
 
 export default function OrdersPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -42,6 +65,9 @@ export default function OrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<OrderWithItems | null>(
     null
   );
+  const [cashCutOpen, setCashCutOpen] = useState(false);
+  const [cashCounts, setCashCounts] = useState<Record<string, number>>(createInitialCounts);
+  const [salesForCut, setSalesForCut] = useState<CashRegisterSale[]>([]);
   const printer = useBluetootPrinter();
 
   const { orders, isLoading, updateOrderStatus, isUpdating } = useOrders({
@@ -75,15 +101,40 @@ export default function OrdersPage() {
     }
   };
 
-  const handlePrintCashCutToday = async () => {
+  const expectedCash = useMemo(
+    () =>
+      salesForCut
+        .filter((sale) => sale.paymentMethod === "efectivo")
+        .reduce((sum, sale) => sum + sale.total, 0),
+    [salesForCut]
+  );
+
+  const countedCash = useMemo(
+    () =>
+      CASH_DENOMINATIONS.reduce(
+        (sum, denomination) => sum + denomination.value * (cashCounts[denomination.key] || 0),
+        0
+      ),
+    [cashCounts]
+  );
+
+  const cashDifference = countedCash - expectedCash;
+
+  const loadTodaySales = () => {
     const { from, to } = getTodaySalesRange();
-    const todaySales = getCashRegisterSales({ dateFrom: from, dateTo: to });
+    return getCashRegisterSales({ dateFrom: from, dateTo: to });
+  };
 
+  const handleOpenCashCut = () => {
+    const todaySales = loadTodaySales();
+    setSalesForCut(todaySales);
+    setCashCutOpen(true);
     if (todaySales.length === 0) {
-      toast.info("No hay ventas registradas hoy para corte de caja.");
-      return;
+      toast.info("No hay ventas registradas hoy. Puedes capturar conteo e imprimir en cero.");
     }
+  };
 
+  const handlePrintCashCutToday = async () => {
     const generatedAt = new Date().toLocaleDateString("es-MX", {
       day: "2-digit",
       month: "2-digit",
@@ -92,7 +143,16 @@ export default function OrdersPage() {
       minute: "2-digit",
     });
 
-    await printer.printCashCutTicket(todaySales, generatedAt, "CORTE DE CAJA (HOY)");
+    await printer.printCashCutTicket(salesForCut, generatedAt, "CORTE DE CAJA (HOY)", {
+      expectedCash,
+      countedCash,
+      difference: cashDifference,
+      entries: CASH_DENOMINATIONS.map((denomination) => ({
+        label: denomination.label,
+        value: denomination.value,
+        quantity: cashCounts[denomination.key] || 0,
+      })),
+    });
   };
 
   return (
@@ -145,7 +205,7 @@ export default function OrdersPage() {
           type="button"
           variant="outline"
           className="gap-2 sm:ml-auto"
-          onClick={handlePrintCashCutToday}
+          onClick={handleOpenCashCut}
         >
           <Printer className="h-4 w-4" />
           Corte de Caja (Hoy)
@@ -222,6 +282,90 @@ export default function OrdersPage() {
           </Table>
         )}
       </div>
+
+      <Dialog open={cashCutOpen} onOpenChange={setCashCutOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Corte de Caja (Hoy)</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Ventas registradas</p>
+              <p className="text-xl font-bold text-foreground">{salesForCut.length}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Efectivo esperado</p>
+              <p className="text-xl font-bold text-foreground">${expectedCash.toFixed(0)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Efectivo contado</p>
+              <p className="text-xl font-bold text-primary">${countedCash.toFixed(2)}</p>
+            </div>
+          </div>
+
+          <div className="max-h-[45vh] overflow-y-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Denominación</TableHead>
+                  <TableHead className="w-28 text-right">Cantidad</TableHead>
+                  <TableHead className="w-28 text-right">Subtotal</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {CASH_DENOMINATIONS.map((denomination) => {
+                  const quantity = cashCounts[denomination.key] || 0;
+                  const subtotal = denomination.value * quantity;
+                  return (
+                    <TableRow key={denomination.key}>
+                      <TableCell>{denomination.label}</TableCell>
+                      <TableCell className="text-right">
+                        <Input
+                          type="number"
+                          min="0"
+                          value={quantity}
+                          className="h-8 text-right"
+                          onChange={(event) => {
+                            const raw = Number.parseInt(event.target.value || "0", 10);
+                            const next = Number.isNaN(raw) || raw < 0 ? 0 : raw;
+                            setCashCounts((prev) => ({ ...prev, [denomination.key]: next }));
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        ${subtotal.toFixed(2)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <span className="text-sm font-medium text-foreground">Diferencia (contado - esperado)</span>
+            <span
+              className={`text-lg font-bold ${cashDifference < 0 ? "text-red-600" : cashDifference > 0 ? "text-amber-600" : "text-green-600"}`}
+            >
+              ${cashDifference.toFixed(2)}
+            </span>
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setCashCounts(createInitialCounts())}
+            >
+              Limpiar conteo
+            </Button>
+            <Button className="ml-auto gap-2" onClick={handlePrintCashCutToday}>
+              <Printer className="h-4 w-4" />
+              Imprimir corte 80mm
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Detalle */}
       <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>

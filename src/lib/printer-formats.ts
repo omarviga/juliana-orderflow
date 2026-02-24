@@ -1,6 +1,19 @@
 import type { CartItem } from "@/types/pos";
 import type { CashRegisterSale } from "@/lib/cash-register";
 
+export interface CashCountEntry {
+  label: string;
+  value: number;
+  quantity: number;
+}
+
+export interface CashCutCountSummary {
+  expectedCash: number;
+  countedCash: number;
+  difference: number;
+  entries: CashCountEntry[];
+}
+
 interface PrinterConfig {
   width: number; // mm
   charsPerLine: number;
@@ -149,7 +162,8 @@ export function generateClientTicketHTML(
 export function generateCashCutTicketHTML(
   sales: CashRegisterSale[],
   generatedAt: string,
-  title: string = "CORTE DE CAJA"
+  title: string = "CORTE DE CAJA",
+  countSummary?: CashCutCountSummary
 ): string {
   const config = PRINTER_CONFIGS["80mm"];
   const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
@@ -178,6 +192,27 @@ export function generateCashCutTicketHTML(
       `;
     })
     .join("");
+
+  const countedSection = countSummary
+    ? `
+      <div class="sep"></div>
+      <div class="sales-title">CONTEO EFECTIVO</div>
+      ${countSummary.entries
+        .filter((entry) => entry.quantity > 0)
+        .map(
+          (entry) => `
+            <div class="row">
+              <span>${escapeHtml(entry.label)} x ${entry.quantity}</span>
+              <strong>$${(entry.value * entry.quantity).toFixed(0)}</strong>
+            </div>
+          `
+        )
+        .join("") || "<div class='sale-meta'>Sin denominaciones capturadas.</div>"}
+      <div class="row"><span>Efectivo esperado</span><strong>$${countSummary.expectedCash.toFixed(0)}</strong></div>
+      <div class="row"><span>Efectivo contado</span><strong>$${countSummary.countedCash.toFixed(0)}</strong></div>
+      <div class="row"><span>Diferencia</span><strong>$${countSummary.difference.toFixed(0)}</strong></div>
+    `
+    : "";
 
   return `
     <html>
@@ -217,6 +252,7 @@ export function generateCashCutTicketHTML(
           <div class="sep"></div>
           <div class="sales-title">DETALLE DE VENTAS</div>
           ${saleRows || "<div class='sale-meta'>Sin ventas registradas.</div>"}
+          ${countedSection}
 
           <div class="total-row"><span>TOTAL</span><span>$${totalSales.toFixed(0)}</span></div>
         </div>

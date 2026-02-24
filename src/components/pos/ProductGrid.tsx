@@ -5,6 +5,30 @@ import type { Product, ProductSize } from "@/types/pos";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
+const BEVERAGE_PRICE_OVERRIDES: Record<string, number> = {
+  "AGUA DE LA CASA": 25,
+  "AGUA EMBOTELLADA": 15,
+  "AGUA GASIFICADA": 27,
+  REFRESCO: 27,
+  "CAFE AMERICANO": 20,
+  CAPUCHINO: 65,
+  "CAFE LATTE": 55,
+  "CAFE HELADO": 40,
+};
+
+const normalizeText = (value: string) =>
+  value
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+const getDisplayPrice = (product: Product, isBeverageCategory: boolean) => {
+  if (!isBeverageCategory) return product.price;
+  const key = normalizeText(product.name);
+  return BEVERAGE_PRICE_OVERRIDES[key] ?? product.price;
+};
+
 interface Props {
   products: Product[];
   categoryName?: string;
@@ -31,6 +55,7 @@ export function ProductGrid({
   const isSandwichCategory = normalizedCategory.includes("sandwich");
   const isBaguetteCategory = normalizedCategory.includes("baguette");
   const isHouseSaladCategory = normalizedCategory.includes("ensaladas");
+  const isBeverageCategory = normalizedCategory.includes("bebida");
 
   if (isSandwichCategory) {
     return (
@@ -97,17 +122,24 @@ export function ProductGrid({
           return (
             <Card key={product.id} className="transition-shadow hover:shadow-md">
               <CardContent className="flex flex-col items-center justify-center p-4 text-center">
-                <h3 className="font-semibold text-foreground">{product.name}</h3>
-                <p className="mt-1 text-lg font-bold text-primary">
-                  ${product.price?.toFixed(0)}
-                </p>
-                <Button
-                  size="sm"
-                  className="mt-3 w-full gap-1"
-                  onClick={() => onAddToCart(product, product.price!, undefined)}
-                >
-                  <Plus className="h-4 w-4" /> Agregar
-                </Button>
+                {(() => {
+                  const displayPrice = getDisplayPrice(product, isBeverageCategory);
+                  return (
+                    <>
+                      <h3 className="font-semibold text-foreground">{product.name}</h3>
+                      <p className="mt-1 text-lg font-bold text-primary">
+                        ${displayPrice?.toFixed(0)}
+                      </p>
+                      <Button
+                        size="sm"
+                        className="mt-3 w-full gap-1"
+                        onClick={() => onAddToCart(product, displayPrice!, undefined)}
+                      >
+                        <Plus className="h-4 w-4" /> Agregar
+                      </Button>
+                    </>
+                  );
+                })()}
               </CardContent>
             </Card>
           );
@@ -155,21 +187,28 @@ export function ProductGrid({
         return (
           <Card key={product.id} className="transition-shadow hover:shadow-md">
             <CardContent className="flex flex-col items-center justify-center p-4 text-center">
-              <h3 className="font-semibold text-foreground">{product.name}</h3>
-              <p className="mt-1 text-lg font-bold text-primary">
-                ${product.price?.toFixed(0)}
-              </p>
-              <Button
-                size="sm"
-                className="mt-3 w-full gap-1"
-                onClick={() =>
-                  isHouseSaladCategory
-                    ? onCustomizeHouseSalad(product)
-                    : onAddToCart(product, product.price!, undefined)
-                }
-              >
-                <Plus className="h-4 w-4" /> {isHouseSaladCategory ? "Agregar extras" : "Agregar"}
-              </Button>
+              {(() => {
+                const displayPrice = getDisplayPrice(product, isBeverageCategory);
+                return (
+                  <>
+                    <h3 className="font-semibold text-foreground">{product.name}</h3>
+                    <p className="mt-1 text-lg font-bold text-primary">
+                      ${displayPrice?.toFixed(0)}
+                    </p>
+                    <Button
+                      size="sm"
+                      className="mt-3 w-full gap-1"
+                      onClick={() =>
+                        isHouseSaladCategory
+                          ? onCustomizeHouseSalad(product)
+                          : onAddToCart(product, displayPrice!, undefined)
+                      }
+                    >
+                      <Plus className="h-4 w-4" /> {isHouseSaladCategory ? "Agregar extras" : "Agregar"}
+                    </Button>
+                  </>
+                );
+              })()}
             </CardContent>
           </Card>
         );
