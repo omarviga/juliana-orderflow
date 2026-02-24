@@ -37,6 +37,7 @@ import {
   type CashRegisterSale,
 } from "@/lib/cash-register";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 const CASH_DENOMINATIONS = [
   { key: "1000", label: "Billete $1000", value: 1000 },
@@ -68,6 +69,7 @@ export default function OrdersPage() {
   const [cashCutOpen, setCashCutOpen] = useState(false);
   const [cashCounts, setCashCounts] = useState<Record<string, number>>(createInitialCounts);
   const [salesForCut, setSalesForCut] = useState<CashRegisterSale[]>([]);
+  const [isFallbackSales, setIsFallbackSales] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const printer = useBluetootPrinter();
 
@@ -131,12 +133,56 @@ export default function OrdersPage() {
     return getCashRegisterSales({ dateFrom: from, dateTo: to });
   };
 
-  const handleOpenCashCut = () => {
+  const loadTodayPaidOrdersFallback = async (): Promise<CashRegisterSale[]> => {
+    const { from, to } = getTodaySalesRange();
+    const { data, error } = await supabase
+      .from("orders")
+      .select("id, order_number, customer_name, total, created_at")
+      .eq("status", "pagado")
+      .gte("created_at", from.toISOString())
+      .lte("created_at", to.toISOString())
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    return (data || []).map((order) => ({
+      orderId: order.id,
+      orderNumber: order.order_number,
+      customerName: order.customer_name || "Mostrador",
+      total: order.total,
+      // The schema does not persist payment method in orders yet.
+      paymentMethod: "efectivo",
+      createdAt: order.created_at,
+    }));
+  };
+
+  const handleOpenCashCut = async () => {
     const todaySales = loadTodaySales();
-    setSalesForCut(todaySales);
-    setCashCutOpen(true);
-    if (todaySales.length === 0) {
-      toast.info("No hay ventas registradas hoy. Puedes capturar conteo e imprimir en cero.");
+    if (todaySales.length > 0) {
+      setIsFallbackSales(false);
+      setSalesForCut(todaySales);
+      setCashCutOpen(true);
+      return;
+    }
+
+    try {
+      const fallbackSales = await loadTodayPaidOrdersFallback();
+      setIsFallbackSales(fallbackSales.length > 0);
+      setSalesForCut(fallbackSales);
+      setCashCutOpen(true);
+
+      if (fallbackSales.length === 0) {
+        toast.info("No hay ventas registradas hoy. Puedes capturar conteo e imprimir en cero.");
+      } else {
+        toast.warning("Se cargaron ventas desde pedidos; método de pago asumido como efectivo.");
+      }
+    } catch {
+      setIsFallbackSales(false);
+      setSalesForCut([]);
+      setCashCutOpen(true);
+      toast.error("No se pudieron cargar las ventas del día.");
     }
   };
 
@@ -299,6 +345,11 @@ export default function OrdersPage() {
           <DialogHeader>
             <DialogTitle>Corte de Caja (Hoy)</DialogTitle>
           </DialogHeader>
+          {isFallbackSales && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Ventas cargadas desde pedidos pagados de hoy. El método de pago se asume como efectivo.
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-lg border p-3">
