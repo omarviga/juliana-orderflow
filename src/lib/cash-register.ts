@@ -14,6 +14,7 @@ const CASH_REGISTER_STORAGE_KEY = "cash_register_sales";
 const CASH_WITHDRAWALS_STORAGE_KEY = "cash_register_withdrawals";
 const CASH_MOVEMENTS_STORAGE_KEY = "cash_register_movements";
 const CASH_OPENINGS_STORAGE_KEY = "cash_register_openings";
+const CASH_CUTS_STORAGE_KEY = "cash_register_cuts";
 
 export interface CashWithdrawal {
   id: string;
@@ -35,6 +36,28 @@ export interface CashOpening {
   amount: number;
   note: string;
   createdAt: string;
+}
+
+export interface CashCutEntry {
+  label: string;
+  value: number;
+  quantity: number;
+}
+
+export interface CashCutRecord {
+  id: string;
+  createdAt: string;
+  expectedCash: number;
+  countedCash: number;
+  difference: number;
+  openingAmount: number;
+  salesCount: number;
+  cashSalesTotal: number;
+  cardSalesTotal: number;
+  depositsTotal: number;
+  withdrawalsTotal: number;
+  entries: CashCutEntry[];
+  note?: string;
 }
 
 function readSales(): CashRegisterSale[] {
@@ -105,6 +128,22 @@ function readOpenings(): CashOpening[] {
 
 function writeOpenings(openings: CashOpening[]): void {
   localStorage.setItem(CASH_OPENINGS_STORAGE_KEY, JSON.stringify(openings));
+}
+
+function readCashCuts(): CashCutRecord[] {
+  const raw = localStorage.getItem(CASH_CUTS_STORAGE_KEY);
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw) as CashCutRecord[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCashCuts(cuts: CashCutRecord[]): void {
+  localStorage.setItem(CASH_CUTS_STORAGE_KEY, JSON.stringify(cuts));
 }
 
 function migrateLegacyWithdrawalsToMovements(): void {
@@ -235,6 +274,44 @@ export function getCashOpenings(filter?: { dateFrom?: Date; dateTo?: Date }): Ca
 
   return openings.sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+}
+
+export function registerCashCut(cut: Omit<CashCutRecord, "id" | "createdAt">): CashCutRecord {
+  const next: CashCutRecord = {
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    expectedCash: cut.expectedCash,
+    countedCash: cut.countedCash,
+    difference: cut.difference,
+    openingAmount: cut.openingAmount,
+    salesCount: cut.salesCount,
+    cashSalesTotal: cut.cashSalesTotal,
+    cardSalesTotal: cut.cardSalesTotal,
+    depositsTotal: cut.depositsTotal,
+    withdrawalsTotal: cut.withdrawalsTotal,
+    entries: cut.entries,
+    note: cut.note,
+  };
+
+  const cuts = readCashCuts();
+  cuts.push(next);
+  writeCashCuts(cuts);
+  return next;
+}
+
+export function getCashCuts(filter?: { dateFrom?: Date; dateTo?: Date }): CashCutRecord[] {
+  let cuts = readCashCuts();
+
+  if (filter?.dateFrom) {
+    cuts = cuts.filter((entry) => new Date(entry.createdAt) >= filter.dateFrom!);
+  }
+  if (filter?.dateTo) {
+    cuts = cuts.filter((entry) => new Date(entry.createdAt) <= filter.dateTo!);
+  }
+
+  return cuts.sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 }
 

@@ -32,12 +32,15 @@ import { es } from "date-fns/locale";
 import { ChevronRight, Printer } from "lucide-react";
 import type { OrderWithItems } from "@/hooks/useOrders";
 import {
+  getCashCuts,
   getCashOpenings,
   getCashRegisterSales,
   getCashMovements,
   getTodaySalesRange,
+  registerCashCut,
   registerCashOpening,
   registerCashMovement,
+  type CashCutRecord,
   type CashOpening,
   type CashMovement,
   type CashMovementType,
@@ -88,6 +91,7 @@ export default function OrdersPage() {
   const [salesForCut, setSalesForCut] = useState<CashRegisterSale[]>([]);
   const [openingForCut, setOpeningForCut] = useState<CashOpening | null>(null);
   const [movementsForCut, setMovementsForCut] = useState<CashMovement[]>([]);
+  const [cutsForToday, setCutsForToday] = useState<CashCutRecord[]>([]);
   const [soldProductsForCut, setSoldProductsForCut] = useState<SoldProductSummary[]>([]);
   const [isFallbackSales, setIsFallbackSales] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
@@ -196,6 +200,11 @@ export default function OrdersPage() {
     return openings.length > 0 ? openings[openings.length - 1] : null;
   };
 
+  const loadTodayCuts = () => {
+    const { from, to } = getTodaySalesRange();
+    return getCashCuts({ dateFrom: from, dateTo: to });
+  };
+
   const loadTodaySoldProducts = async (): Promise<SoldProductSummary[]> => {
     const { from, to } = getTodaySalesRange();
     const { data, error } = await supabase
@@ -271,6 +280,7 @@ export default function OrdersPage() {
     setSoldProductsForCut([]);
     setMovementsForCut(todayMovements);
     setOpeningForCut(todayOpening);
+    setCutsForToday(loadTodayCuts());
     try {
       const productsSummary = await loadTodaySoldProducts();
       setSoldProductsForCut(productsSummary);
@@ -369,49 +379,81 @@ export default function OrdersPage() {
       minute: "2-digit",
     });
 
-    await printer.printCashCutTicket(
-      salesForCut,
-      generatedAt,
-      "CORTE DE CAJA (HOY)",
-      {
-        expectedCash: expectedCashNet,
-        countedCash,
-        difference: cashDifference,
-        entries: CASH_DENOMINATIONS.map((denomination) => ({
-          label: denomination.label,
-          value: denomination.value,
-          quantity: cashCounts[denomination.key] || 0,
-        })),
-      },
-      {
-        opening: openingForCut
-          ? {
-              amount: openingForCut.amount,
-              note: openingForCut.note,
-              createdAt: openingForCut.createdAt,
-            }
-          : null,
-        products: soldProductsForCut,
-        deposits: depositsForCut.map((entry) => ({
-          amount: entry.amount,
-          reason: entry.reason,
-          createdAt: entry.createdAt,
-        })),
-        withdrawals: withdrawalsForCut.map((entry) => ({
-          amount: entry.amount,
-          reason: entry.reason,
-          createdAt: entry.createdAt,
-        })),
-        cardTransactions: salesForCut
-          .filter((sale) => sale.paymentMethod === "tarjeta")
-          .map((sale) => ({
-            orderNumber: sale.orderNumber,
-            customerName: sale.customerName,
-            total: sale.total,
-            createdAt: sale.createdAt,
+    const entries = CASH_DENOMINATIONS.map((denomination) => ({
+      label: denomination.label,
+      value: denomination.value,
+      quantity: cashCounts[denomination.key] || 0,
+    }));
+
+    try {
+      await printer.printCashCutTicket(
+        salesForCut,
+        generatedAt,
+        "CORTE DE CAJA (HOY)",
+        {
+          expectedCash: expectedCashNet,
+          countedCash,
+          difference: cashDifference,
+          entries,
+        },
+        {
+          opening: openingForCut
+            ? {
+                amount: openingForCut.amount,
+                note: openingForCut.note,
+                createdAt: openingForCut.createdAt,
+              }
+            : null,
+          products: soldProductsForCut,
+          deposits: depositsForCut.map((entry) => ({
+            amount: entry.amount,
+            reason: entry.reason,
+            createdAt: entry.createdAt,
           })),
-      }
-    );
+          withdrawals: withdrawalsForCut.map((entry) => ({
+            amount: entry.amount,
+            reason: entry.reason,
+            createdAt: entry.createdAt,
+          })),
+          cardTransactions: salesForCut
+            .filter((sale) => sale.paymentMethod === "tarjeta")
+            .map((sale) => ({
+              orderNumber: sale.orderNumber,
+              customerName: sale.customerName,
+              total: sale.total,
+              createdAt: sale.createdAt,
+            })),
+        }
+      );
+    } catch {
+      toast.error("No se pudo imprimir el corte. No se registró el cierre.");
+      return;
+    }
+
+    const cashSalesTotal = salesForCut
+      .filter((sale) => sale.paymentMethod === "efectivo")
+      .reduce((sum, sale) => sum + sale.total, 0);
+
+    const cardSalesTotalLocal = salesForCut
+      .filter((sale) => sale.paymentMethod === "tarjeta")
+      .reduce((sum, sale) => sum + sale.total, 0);
+
+    const savedCut = registerCashCut({
+      expectedCash: expectedCashNet,
+      countedCash,
+      difference: cashDifference,
+      openingAmount: openingForCut.amount,
+      salesCount: salesForCut.length,
+      cashSalesTotal,
+      cardSalesTotal: cardSalesTotalLocal,
+      depositsTotal: totalDeposits,
+      withdrawalsTotal: totalWithdrawals,
+      entries,
+      note: "CORTE DE CAJA (HOY)",
+    });
+
+    setCutsForToday(loadTodayCuts());
+    toast.success(`Corte registrado correctamente (folio ${savedCut.id.slice(0, 8)}).`);
   };
 
   return (
@@ -783,6 +825,33 @@ export default function OrdersPage() {
             </span>
           </div>
 
+          <div className="rounded-lg border p-3">
+            <p className="mb-2 text-sm font-medium text-foreground">Cortes registrados hoy</p>
+            <div className="max-h-40 space-y-1 overflow-y-auto text-sm">
+              {cutsForToday.length === 0 ? (
+                <p className="text-muted-foreground">Sin cortes registrados hoy.</p>
+              ) : (
+                cutsForToday.map((cut) => (
+                  <div key={cut.id} className="rounded border p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">Folio {cut.id.slice(0, 8)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {format(new Date(cut.createdAt), "HH:mm", { locale: es })}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between text-xs">
+                      <span>Esperado {formatCurrencyMXN(cut.expectedCash)}</span>
+                      <span>Contado {formatCurrencyMXN(cut.countedCash)}</span>
+                      <span className={cut.difference === 0 ? "text-green-600" : "text-amber-700"}>
+                        Dif. {formatCurrencyMXN(cut.difference)}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -792,7 +861,7 @@ export default function OrdersPage() {
             </Button>
             <Button className="ml-auto gap-2" onClick={handlePrintCashCutToday}>
               <Printer className="h-4 w-4" />
-              Imprimir corte 80mm
+              Registrar e imprimir corte 80mm
             </Button>
           </div>
         </DialogContent>
