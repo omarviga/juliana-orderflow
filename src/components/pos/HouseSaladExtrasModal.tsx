@@ -116,7 +116,9 @@ export function HouseSaladExtrasModal({
 
     const label =
       selectedIngredients.length > 0
-        ? `Extras: ${selectedIngredients.map((item) => item.name).join(", ")}`
+        ? `${
+            requireAtLeastOneSelection ? "Añadido de más" : "Extras"
+          }: ${selectedIngredients.map((item) => item.name).join(", ")}`
         : "Sin extras";
 
     onAddToCart(product, total, customizations, label, productSize);

@@ -25,6 +25,22 @@ const PRINTER_CONFIGS: Record<string, PrinterConfig> = {
   "58mm": { width: 58, charsPerLine: 32, fontSize: "small" },
 };
 
+const STANDALONE_EXTRA_PRODUCT_NAMES = new Set([
+  "EXTRA SUELTO",
+  "EXTRAS SUELTOS",
+  "EXTRA INDEPENDIENTE",
+]);
+
+const normalizeText = (value: string) =>
+  value
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+const getDisplayProductName = (name: string) =>
+  STANDALONE_EXTRA_PRODUCT_NAMES.has(normalizeText(name)) ? "Extra" : name;
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -53,7 +69,7 @@ export function generateClientTicketHTML(
   const safeDate = escapeHtml(dateStr);
   const renderedItems = items
     .map((item) => {
-      const itemLine = `${item.quantity}x ${item.product.name}${item.productSize ? ` (${item.productSize.name})` : ""}`;
+      const itemLine = `${item.quantity}x ${getDisplayProductName(item.product.name)}${item.productSize ? ` (${item.productSize.name})` : ""}`;
       const safeItemLine = escapeHtml(itemLine);
       const priceLine = `$${item.subtotal.toFixed(0)}`;
       const detail = item.customLabel
@@ -363,7 +379,7 @@ export function generateKitchenOrderHTML(
   // Items con ingredientes
   items.forEach((item, index) => {
     html += `<div class="item-group">`;
-    html += `<div class="item-line">${item.quantity}x ${item.product.name}${item.productSize ? ` (${item.productSize.name})` : ""}</div>`;
+    html += `<div class="item-line">${item.quantity}x ${getDisplayProductName(item.product.name)}${item.productSize ? ` (${item.productSize.name})` : ""}</div>`;
 
     // Mostrar ingredientes/customizaciones
     if (item.customizations && item.customizations.length > 0) {

@@ -18,6 +18,7 @@ const STANDALONE_EXTRA_PRODUCT_CANDIDATES = new Set([
   "EXTRA INDEPENDIENTE",
   "EXTRAS",
 ]);
+const HIDDEN_CATEGORY_NAMES = new Set(["extras"]);
 
 const normalizeText = (value: string) =>
   value
@@ -71,6 +72,8 @@ const Index = () => {
 
     return categories.filter((category) => {
       const key = normalizeCategoryName(category.name);
+      if (HIDDEN_CATEGORY_NAMES.has(key)) return false;
+
       const group = groupedByName.get(key) || [];
       if (group.length <= 1) return true;
 

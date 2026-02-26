@@ -5,6 +5,25 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { NumPad } from "./NumPad";
 import { useState } from "react";
 
+const STANDALONE_EXTRA_PRODUCT_NAMES = new Set([
+  "EXTRA SUELTO",
+  "EXTRAS SUELTOS",
+  "EXTRA INDEPENDIENTE",
+]);
+
+const normalizeText = (value: string) =>
+  value
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+const getDisplayProductName = (name: string) => {
+  const normalized = normalizeText(name);
+  if (STANDALONE_EXTRA_PRODUCT_NAMES.has(normalized)) return "Extra";
+  return name;
+};
+
 interface Props {
   items: CartItem[];
   total: number;
@@ -62,7 +81,7 @@ export function CartPanel({
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground truncate">
-                      {item.product.name}
+                      {getDisplayProductName(item.product.name)}
                       {item.productSize && (
                         <span className="ml-1 text-muted-foreground">
                           ({item.productSize.name})

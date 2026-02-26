@@ -25,6 +25,22 @@ import {
   type OfflineOrderPayload,
 } from "@/lib/offline-orders";
 
+const STANDALONE_EXTRA_PRODUCT_NAMES = new Set([
+  "EXTRA SUELTO",
+  "EXTRAS SUELTOS",
+  "EXTRA INDEPENDIENTE",
+]);
+
+const normalizeText = (value: string) =>
+  value
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+const getDisplayProductName = (name: string) =>
+  STANDALONE_EXTRA_PRODUCT_NAMES.has(normalizeText(name)) ? "Extra" : name;
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -367,7 +383,7 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
           {items.map((item) => (
             <div key={item.id} className="flex justify-between">
               <span className="text-foreground">
-                {item.quantity}x {item.product.name}
+                {item.quantity}x {getDisplayProductName(item.product.name)}
                 {item.productSize && ` (${item.productSize.name})`}
               </span>
               <span className="font-medium text-foreground">${item.subtotal.toFixed(0)}</span>
