@@ -41,7 +41,7 @@ interface Props {
   productSizes: ProductSize[];
   onAddToCart: (product: Product, price: number, size?: ProductSize) => void;
   onCustomize: (product: Product) => void;
-  onCustomizeHouseSalad: (product: Product) => void;
+  onCustomizeHouseSalad: (product: Product, size?: ProductSize) => void;
 }
 
 export function ProductGrid({
@@ -128,9 +128,9 @@ export function ProductGrid({
             );
           }
 
-          // For Baguettes: show simplified view without size selector
           if (hasSizes) {
             const baguetteSize = sizes[0]; // Take first available size
+            const productForModal = { ...product, price: baguetteSize.price };
             return (
               <Card key={product.id} className="transition-shadow hover:shadow-md">
                 <CardContent className="flex flex-col items-center justify-center p-4 text-center">
@@ -141,9 +141,9 @@ export function ProductGrid({
                   <Button
                     size="sm"
                     className="mt-3 w-full gap-1"
-                    onClick={() => onAddToCart(product, baguetteSize.price, baguetteSize)}
+                    onClick={() => onCustomizeHouseSalad(productForModal, baguetteSize)}
                   >
-                    <Plus className="h-4 w-4" /> Agregar
+                    <Plus className="h-4 w-4" /> Agregar / Extras
                   </Button>
                 </CardContent>
               </Card>
@@ -155,6 +155,7 @@ export function ProductGrid({
               <CardContent className="flex flex-col items-center justify-center p-4 text-center">
                 {(() => {
                   const displayPrice = getDisplayPrice(product, isBeverageCategory);
+                  const productForModal = { ...product, price: displayPrice ?? 0 };
                   return (
                     <>
                       <h3 className="font-semibold text-foreground">{product.name}</h3>
@@ -164,9 +165,9 @@ export function ProductGrid({
                       <Button
                         size="sm"
                         className="mt-3 w-full gap-1"
-                        onClick={() => onAddToCart(product, displayPrice!, undefined)}
+                        onClick={() => onCustomizeHouseSalad(productForModal, undefined)}
                       >
-                        <Plus className="h-4 w-4" /> Agregar
+                        <Plus className="h-4 w-4" /> Agregar / Extras
                       </Button>
                     </>
                   );
@@ -231,7 +232,7 @@ export function ProductGrid({
                       className="mt-3 w-full gap-1"
                       onClick={() =>
                         isHouseSaladCategory
-                          ? onCustomizeHouseSalad(product)
+                          ? onCustomizeHouseSalad(product, undefined)
                           : onAddToCart(product, displayPrice!, undefined)
                       }
                     >

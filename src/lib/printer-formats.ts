@@ -561,19 +561,60 @@ function htmlToEscPosCommands(html: string, printerSize: "80mm" | "58mm"): numbe
 }
 
 /**
- * Imprime usando la API de impresión del navegador (fallback)
+ * Imprime usando la API de impresión del navegador (fallback).
+ * Esto crea un iframe oculto, escribe el HTML en él y abre el diálogo de impresión
+ * para ese iframe, evitando abrir una nueva pestaña.
  */
 export function printViaBrowser(htmlContent: string, title: string = "Impresión"): void {
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) {
-    throw new Error("No se pudo abrir ventana de impresión");
+  // Crear un iframe para la impresión
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("title", title);
+
+  // Ocultarlo de la vista
+  iframe.style.position = "absolute";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "none";
+  iframe.style.visibility = "hidden";
+  iframe.style.top = "-1000px";
+  iframe.style.left = "-1000px";
+
+  document.body.appendChild(iframe);
+
+  const iframeWindow = iframe.contentWindow;
+  if (!iframeWindow) {
+    document.body.removeChild(iframe);
+    throw new Error("No se pudo obtener la ventana del iframe de impresión.");
   }
 
-  printWindow.document.write(htmlContent);
-  printWindow.document.close();
+  // Escribir el contenido HTML en el iframe
+  iframeWindow.document.open();
+  iframeWindow.document.write(htmlContent);
+  iframeWindow.document.close();
 
-  // Esperar a que cargue y luego imprimir
-  printWindow.onload = () => {
-    printWindow.print();
+  // Esperar a que el contenido cargue completamente antes de imprimir
+  iframe.onload = () => {
+    iframeWindow.focus(); // Necesario para algunos navegadores
+    try {
+      iframeWindow.print();
+    } catch (e) {
+      console.error("Error al intentar imprimir:", e);
+      throw new Error("Fallo al invocar la impresión del navegador.");
+    } finally {
+      // Limpiar el iframe después de un breve retraso para no interferir
+      // con el diálogo de impresión.
+      setTimeout(() => {
+        if (iframe.parentNode) {
+          iframe.parentNode.removeChild(iframe);
+        }
+      }, 500);
+    }
   };
+
+  // Fallback por si onload no se dispara en algunos casos (ej. about:blank)
+  setTimeout(() => {
+    if (iframe.contentWindow?.document.readyState === "complete") {
+      iframe.onload?.(new Event("load"));
+    }
+  }, 100);
 }

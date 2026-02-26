@@ -22,7 +22,10 @@ const Index = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [customizeProduct, setCustomizeProduct] = useState<Product | null>(null);
   const [showPayment, setShowPayment] = useState(false);
-  const [houseSaladProduct, setHouseSaladProduct] = useState<Product | null>(null);
+  const [houseSaladProduct, setHouseSaladProduct] = useState<{
+    product: Product;
+    size?: ProductSize;
+  } | null>(null);
 
   const visibleCategories = useMemo(() => {
     if (!categories || categories.length === 0) return [];
@@ -104,9 +107,10 @@ const Index = () => {
     product: Product,
     unitPrice: number,
     customizations: SelectedIngredient[],
-    label: string
+    label: string,
+    productSize?: ProductSize
   ) => {
-    cart.addItem(product, unitPrice, 1, undefined, customizations, label);
+    cart.addItem(product, unitPrice, 1, productSize, customizations, label);
   };
 
   const isLoading = catLoading || prodLoading;
@@ -146,7 +150,7 @@ const Index = () => {
               productSizes={productSizes || []}
               onAddToCart={handleAddToCart}
               onCustomize={setCustomizeProduct}
-              onCustomizeHouseSalad={setHouseSaladProduct}
+              onCustomizeHouseSalad={(product, size) => setHouseSaladProduct({ product, size })}
             />
           )}
         </main>
@@ -180,7 +184,8 @@ const Index = () => {
         <HouseSaladExtrasModal
           open={!!houseSaladProduct}
           onClose={() => setHouseSaladProduct(null)}
-          product={houseSaladProduct}
+          product={houseSaladProduct.product}
+          productSize={houseSaladProduct.size}
           ingredients={ingredients || []}
           onAddToCart={handleHouseSaladAdd}
         />

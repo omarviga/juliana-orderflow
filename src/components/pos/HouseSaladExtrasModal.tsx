@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Ingredient, Product, SelectedIngredient } from "@/types/pos";
+import type { Ingredient, Product, ProductSize, SelectedIngredient } from "@/types/pos";
 import {
   isAllowedSaladProtein,
   isAllowedSaladTopping,
@@ -21,12 +21,14 @@ interface Props {
   open: boolean;
   onClose: () => void;
   product: Product;
+  productSize?: ProductSize;
   ingredients: Ingredient[];
   onAddToCart: (
     product: Product,
     unitPrice: number,
     customizations: SelectedIngredient[],
-    label: string
+    label: string,
+    productSize?: ProductSize
   ) => void;
 }
 
@@ -43,6 +45,7 @@ export function HouseSaladExtrasModal({
   open,
   onClose,
   product,
+  productSize,
   ingredients,
   onAddToCart,
 }: Props) {
@@ -110,7 +113,7 @@ export function HouseSaladExtrasModal({
         ? `Extras: ${selectedIngredients.map((item) => item.name).join(", ")}`
         : "Sin extras";
 
-    onAddToCart(product, total, customizations, label);
+    onAddToCart(product, total, customizations, label, productSize);
     handleClose();
   };
 
