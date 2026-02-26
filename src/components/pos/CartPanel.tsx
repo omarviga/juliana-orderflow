@@ -32,6 +32,7 @@ interface Props {
   onRemove: (id: string) => void;
   onClear: () => void;
   onPay: () => void;
+  payDisabled?: boolean;
   onAddStandaloneExtra?: () => void;
   standaloneExtraDisabled?: boolean;
 }
@@ -43,6 +44,7 @@ export function CartPanel({
   onRemove,
   onClear,
   onPay,
+  payDisabled = false,
   onAddStandaloneExtra,
   standaloneExtraDisabled = false,
 }: Props) {
@@ -166,7 +168,7 @@ export function CartPanel({
           <Button
             className="flex-1"
             onClick={onPay}
-            disabled={items.length === 0}
+            disabled={items.length === 0 || payDisabled}
           >
             Pagar
           </Button>

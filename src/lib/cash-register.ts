@@ -322,6 +322,19 @@ export function getTodaySalesRange(): { from: Date; to: Date } {
   return { from, to };
 }
 
+export function isCashRegisterOpenToday(): boolean {
+  const { from, to } = getTodaySalesRange();
+  const openings = getCashOpenings({ dateFrom: from, dateTo: to });
+  if (openings.length === 0) return false;
+
+  const cuts = getCashCuts({ dateFrom: from, dateTo: to });
+  if (cuts.length === 0) return true;
+
+  const lastOpeningAt = new Date(openings[openings.length - 1].createdAt).getTime();
+  const lastCutAt = new Date(cuts[0].createdAt).getTime();
+  return lastOpeningAt > lastCutAt;
+}
+
 export function getPaymentMethodLabel(method: PaymentMethod): string {
   return method === "tarjeta" ? "Tarjeta" : "Efectivo";
 }

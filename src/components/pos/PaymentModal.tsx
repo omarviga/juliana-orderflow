@@ -48,9 +48,17 @@ interface Props {
   items: CartItem[];
   total: number;
   onOrderComplete: () => void;
+  canProcessPayment?: boolean;
 }
 
-export function PaymentModal({ open, onClose, items, total, onOrderComplete }: Props) {
+export function PaymentModal({
+  open,
+  onClose,
+  items,
+  total,
+  onOrderComplete,
+  canProcessPayment = true,
+}: Props) {
   const [saving, setSaving] = useState(false);
   const [savedOrderNumber, setSavedOrderNumber] = useState<number | null>(null);
   const [customerName, setCustomerName] = useState("");
@@ -141,6 +149,11 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
   };
 
   const handlePay = async () => {
+    if (!canProcessPayment) {
+      toast.error("Caja cerrada. Registra apertura de caja para continuar.");
+      return;
+    }
+
     const normalizedCustomerName = customerName.trim() || "Barra";
     blurActiveElement();
 

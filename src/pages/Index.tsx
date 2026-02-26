@@ -11,6 +11,7 @@ import { useCart } from "@/hooks/useCart";
 import type { Product, ProductSize, SelectedIngredient } from "@/types/pos";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import { isCashRegisterOpenToday } from "@/lib/cash-register";
 
 const STANDALONE_EXTRA_PRODUCT_CANDIDATES = new Set([
   "EXTRA SUELTO",
@@ -38,6 +39,7 @@ const Index = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [customizeProduct, setCustomizeProduct] = useState<Product | null>(null);
   const [showPayment, setShowPayment] = useState(false);
+  const [cashRegisterOpen, setCashRegisterOpen] = useState(false);
   const [showStandaloneExtras, setShowStandaloneExtras] = useState(false);
   const [houseSaladProduct, setHouseSaladProduct] = useState<{
     product: Product;
@@ -87,6 +89,20 @@ const Index = () => {
       return preferred.id === category.id;
     });
   }, [categories, products]);
+
+  useEffect(() => {
+    setCashRegisterOpen(isCashRegisterOpenToday());
+  }, []);
+
+  useEffect(() => {
+    const syncCashRegisterState = () => setCashRegisterOpen(isCashRegisterOpenToday());
+    window.addEventListener("focus", syncCashRegisterState);
+    document.addEventListener("visibilitychange", syncCashRegisterState);
+    return () => {
+      window.removeEventListener("focus", syncCashRegisterState);
+      document.removeEventListener("visibilitychange", syncCashRegisterState);
+    };
+  }, []);
 
   useEffect(() => {
     if (visibleCategories.length === 0) return;
@@ -168,6 +184,19 @@ const Index = () => {
 
   const isLoading = catLoading || prodLoading;
 
+  const refreshCashRegisterState = () => {
+    setCashRegisterOpen(isCashRegisterOpenToday());
+  };
+
+  const handleOpenPayment = () => {
+    refreshCashRegisterState();
+    if (!isCashRegisterOpenToday()) {
+      toast.error("Caja cerrada. Debes registrar apertura de caja para poder cobrar.");
+      return;
+    }
+    setShowPayment(true);
+  };
+
   const handleOpenStandaloneExtras = () => {
     if (!standaloneExtrasProduct) {
       toast.error("No se encontró el producto base de extras. Ejecuta la migración de Extras.");
@@ -224,7 +253,8 @@ const Index = () => {
             onUpdateQuantity={cart.updateQuantity}
             onRemove={cart.removeItem}
             onClear={cart.clearCart}
-            onPay={() => setShowPayment(true)}
+            onPay={handleOpenPayment}
+            payDisabled={!cashRegisterOpen}
             onAddStandaloneExtra={handleOpenStandaloneExtras}
           />
         </aside>
@@ -272,6 +302,7 @@ const Index = () => {
         items={cart.items}
         total={cart.total}
         onOrderComplete={cart.clearCart}
+        canProcessPayment={cashRegisterOpen}
       />
     </Layout>
   );
