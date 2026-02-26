@@ -73,7 +73,11 @@ export function PaymentModal({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setIsTouchDevice(window.matchMedia("(pointer: coarse)").matches);
+    const isCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
+    setIsTouchDevice(isCoarsePointer);
+    if (isCoarsePointer) {
+      setAllowManualNameInput(true);
+    }
   }, []);
 
   useEffect(() => {
