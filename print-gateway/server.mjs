@@ -39,7 +39,7 @@ function formatMoneyMXN(value) {
   return new Intl.NumberFormat("es-MX", {
     style: "currency",
     currency: "MXN",
-    currencyDisplay: "code",
+    currencyDisplay: "symbol",
     maximumFractionDigits: 2,
   }).format(safe);
 }

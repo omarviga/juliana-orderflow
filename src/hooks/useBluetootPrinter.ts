@@ -9,6 +9,12 @@ import {
   printToDevice,
   printViaBrowser,
 } from "@/lib/printer-formats";
+import {
+  isPrintGatewayConfigured,
+  printCashCutViaGateway,
+  printKitchenViaGateway,
+  printTicketViaGateway,
+} from "@/lib/print-gateway";
 import type { CartItem } from "@/types/pos";
 import type { CashRegisterSale } from "@/lib/cash-register";
 
@@ -203,6 +209,27 @@ export function useBluetootPrinter() {
             paymentMethodLabel
           );
 
+          if (isPrintGatewayConfigured()) {
+            const sent = await printTicketViaGateway({
+              orderNumber,
+              customerName,
+              paymentMethodLabel,
+              total,
+              items: items.map((item) => ({
+                quantity: item.quantity,
+                subtotal: item.subtotal,
+                product: { name: item.product.name },
+                productSize: item.productSize ? { name: item.productSize.name } : null,
+                customLabel: item.customLabel || null,
+              })),
+              dateStr,
+            });
+            if (sent) {
+              toast.success("Ticket enviado a impresora");
+              return;
+            }
+          }
+
           if (
             preferences.useBluetoothIfAvailable &&
             preferences.clientPrinter80mm
@@ -251,6 +278,27 @@ export function useBluetootPrinter() {
       const printJob = async () => {
         try {
           const htmlContent = generateCashCutTicketHTML(sales, generatedAt, title, countSummary, details);
+
+          if (isPrintGatewayConfigured()) {
+            const entries = (countSummary?.entries || []).map((entry) => ({
+              label: entry.label,
+              value: entry.value,
+              quantity: entry.quantity,
+            }));
+            const sent = await printCashCutViaGateway({
+              title,
+              generatedAt,
+              salesCount: sales.length,
+              expectedCash: countSummary?.expectedCash || 0,
+              countedCash: countSummary?.countedCash || 0,
+              difference: countSummary?.difference || 0,
+              entries,
+            });
+            if (sent) {
+              toast.success("Corte de caja enviado a impresora");
+              return;
+            }
+          }
 
           if (
             preferences.useBluetoothIfAvailable &&
@@ -304,6 +352,24 @@ export function useBluetootPrinter() {
             customerName,
             dateStr
           );
+
+          if (isPrintGatewayConfigured()) {
+            const sent = await printKitchenViaGateway({
+              orderNumber,
+              customerName,
+              items: items.map((item) => ({
+                quantity: item.quantity,
+                product: { name: item.product.name },
+                productSize: item.productSize ? { name: item.productSize.name } : null,
+                customLabel: item.customLabel || null,
+              })),
+              dateStr,
+            });
+            if (sent) {
+              toast.success("Comanda enviada a impresora");
+              return;
+            }
+          }
 
           if (
             preferences.useBluetoothIfAvailable &&

@@ -14,6 +14,7 @@ import { Printer, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
 import { useBluetoothPrintApp } from "@/hooks/useBluetoothPrintApp";
+import { isPrintGatewayConfigured } from "@/lib/print-gateway";
 import {
   getPaymentMethodLabel,
   registerPaidSale,
@@ -69,6 +70,7 @@ export function PaymentModal({
 
   const printer = useBluetootPrinter();
   const printApp = useBluetoothPrintApp();
+  const usePrintGateway = isPrintGatewayConfigured();
   const quickNames = ["Barra", "Para llevar"];
 
   useEffect(() => {
@@ -238,7 +240,7 @@ export function PaymentModal({
           // Intentar con Bluetooth Print App primero (más confiable)
           let printedWithApp = false;
 
-          if (printApp.isBluetoothPrintAppAvailable()) {
+          if (!usePrintGateway && printApp.isBluetoothPrintAppAvailable()) {
             const kitchenPrinted = await printApp.printKitchenOrder(
               items,
               order.order_number,
@@ -298,7 +300,7 @@ export function PaymentModal({
       // Intentar con Bluetooth Print App primero (más confiable)
       let printedWithApp = false;
 
-      if (printApp.isBluetoothPrintAppAvailable()) {
+      if (!usePrintGateway && printApp.isBluetoothPrintAppAvailable()) {
         printedWithApp =
           type === "cliente"
             ? await printApp.printClientTicket(items, total, savedOrderNumber, customerName)
