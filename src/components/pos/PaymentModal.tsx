@@ -61,7 +61,7 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
 
   const printer = useBluetootPrinter();
   const printApp = useBluetoothPrintApp();
-  const quickNames = ["Mostrador", "Para llevar", "Mesa 1", "Mesa 2", "Mesa 3", "Rappi", "Uber"];
+  const quickNames = ["Barra", "Para llevar"];
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -141,7 +141,7 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
   };
 
   const handlePay = async () => {
-    const normalizedCustomerName = customerName.trim() || "Mostrador";
+    const normalizedCustomerName = customerName.trim() || "Barra";
     blurActiveElement();
 
     setSaving(true);
