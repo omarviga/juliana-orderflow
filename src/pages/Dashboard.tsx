@@ -14,12 +14,7 @@ import {
   LineChart,
   Line,
 } from "recharts";
-
-const money = new Intl.NumberFormat("es-MX", {
-  style: "currency",
-  currency: "MXN",
-  maximumFractionDigits: 0,
-});
+import { formatCurrencyMXN } from "@/lib/currency";
 
 export default function DashboardPage() {
   const {
@@ -76,10 +71,10 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard title="Ventas hoy" value={money.format(todaySales)} />
+          <MetricCard title="Ventas hoy" value={formatCurrencyMXN(todaySales, 0)} />
           <MetricCard title="Pedidos pagados hoy" value={String(todayOrdersCount)} />
-          <MetricCard title="Ticket promedio hoy" value={money.format(avgTicket)} />
-          <MetricCard title="Ventas del mes" value={money.format(monthSales)} />
+          <MetricCard title="Ticket promedio hoy" value={formatCurrencyMXN(avgTicket, 0)} />
+          <MetricCard title="Ventas del mes" value={formatCurrencyMXN(monthSales, 0)} />
         </div>
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -94,7 +89,7 @@ export default function DashboardPage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="label" />
                   <YAxis />
-                  <Tooltip formatter={(v: number) => money.format(v)} />
+                  <Tooltip formatter={(v: number) => formatCurrencyMXN(v, 0)} />
                   <Bar dataKey="sales" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -142,7 +137,7 @@ export default function DashboardPage() {
                     <Badge variant="secondary">#{idx + 1}</Badge>
                     <p className="truncate text-sm font-medium">{product.name}</p>
                     <p className="text-right text-sm">{product.qty} uds</p>
-                    <p className="text-right text-sm font-semibold">{money.format(product.revenue)}</p>
+                    <p className="text-right text-sm font-semibold">{formatCurrencyMXN(product.revenue, 0)}</p>
                   </div>
                 ))}
                 {topProducts.length === 0 && (
@@ -178,7 +173,7 @@ export default function DashboardPage() {
                   <p className="font-semibold">#{order.order_number}</p>
                   <p className="truncate text-muted-foreground">{order.customer_name || "Mostrador"}</p>
                   <p>{new Date(order.created_at).toLocaleString("es-MX")}</p>
-                  <p className="text-right font-semibold">{money.format(Number(order.total || 0))}</p>
+                  <p className="text-right font-semibold">{formatCurrencyMXN(Number(order.total || 0), 0)}</p>
                 </div>
               ))}
               {recentPaidOrders.length === 0 && (

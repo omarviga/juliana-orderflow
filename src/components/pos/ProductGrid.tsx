@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import type { Product, ProductSize } from "@/types/pos";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { formatCurrencyMXN } from "@/lib/currency";
 
 const BEVERAGE_PRICE_OVERRIDES: Record<string, number> = {
   "AGUA DE LA CASA": 25,
@@ -118,7 +119,7 @@ export function ProductGrid({
               <CardContent className="flex flex-col items-center justify-center p-4 text-center">
                 <span className="mb-2 text-2xl">🥗</span>
                 <h3 className="font-semibold text-foreground">{product.name}</h3>
-                <p className="mt-1 text-xs text-muted-foreground">Desde $110</p>
+                <p className="mt-1 text-xs text-muted-foreground">Desde {formatCurrencyMXN(110, 0)}</p>
                 <Button size="sm" className="mt-3 w-full gap-1" variant="default">
                   <Plus className="h-4 w-4" /> Personalizar
                 </Button>
@@ -147,7 +148,7 @@ export function ProductGrid({
                   <>
                     <h3 className="font-semibold text-foreground">{product.name}</h3>
                     <p className="mt-1 text-lg font-bold text-primary">
-                      ${displayPrice?.toFixed(0)}
+                      {formatCurrencyMXN(displayPrice || 0, 0)}
                     </p>
                     <Button
                       size="sm"
@@ -238,7 +239,7 @@ function SizedProductCard({
       <Card className="transition-shadow hover:shadow-md">
         <CardContent className="flex flex-col items-center justify-center p-4 text-center">
           <h3 className="font-semibold text-foreground">{product.name}</h3>
-          <p className="mt-2 text-lg font-bold text-primary">${size.price.toFixed(0)}</p>
+          <p className="mt-2 text-lg font-bold text-primary">{formatCurrencyMXN(size.price, 0)}</p>
           <Button
             size="sm"
             className="mt-3 w-full gap-1"
@@ -268,7 +269,7 @@ function SizedProductCard({
                   : "border-border bg-card text-foreground hover:bg-accent"
               )}
             >
-              {size.name} ${size.price.toFixed(0)}
+              {size.name} {formatCurrencyMXN(size.price, 0)}
             </button>
           ))}
         </div>

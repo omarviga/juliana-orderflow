@@ -45,6 +45,7 @@ import {
 } from "@/lib/cash-register";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { formatCurrencyMXN } from "@/lib/currency";
 
 const CASH_DENOMINATIONS = [
   { key: "1000", label: "Billete $1000", value: 1000 },
@@ -320,7 +321,7 @@ export default function OrdersPage() {
     setOpeningAmount("");
     setOpeningNote("");
     setCashOpeningOpen(false);
-    toast.success(`Apertura registrada por $${saved.amount.toFixed(2)}`);
+    toast.success(`Apertura registrada por ${formatCurrencyMXN(saved.amount)}`);
   };
 
   const handleRegisterCashMovement = () => {
@@ -343,7 +344,7 @@ export default function OrdersPage() {
     setMovementReason("");
     setCashMovementOpen(false);
     toast.success(
-      `${cashMovementType === "ingreso" ? "Ingreso" : "Retiro"} registrado por $${saved.amount.toFixed(2)}`
+      `${cashMovementType === "ingreso" ? "Ingreso" : "Retiro"} registrado por ${formatCurrencyMXN(saved.amount)}`
     );
   };
 
@@ -540,7 +541,7 @@ export default function OrdersPage() {
                   </TableCell>
                   <TableCell>{order.customer_name || "---"}</TableCell>
                   <TableCell className="font-semibold">
-                    ${order.total.toFixed(0)}
+                    {formatCurrencyMXN(order.total, 0)}
                   </TableCell>
                   <TableCell>
                     <Badge
@@ -590,27 +591,27 @@ export default function OrdersPage() {
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Apertura</p>
-              <p className="text-xl font-bold text-foreground">${openingAmountForCut.toFixed(2)}</p>
+              <p className="text-xl font-bold text-foreground">{formatCurrencyMXN(openingAmountForCut)}</p>
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Efectivo esperado</p>
-              <p className="text-xl font-bold text-foreground">${expectedCashNet.toFixed(0)}</p>
+              <p className="text-xl font-bold text-foreground">{formatCurrencyMXN(expectedCashNet, 0)}</p>
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Tarjeta ({cardTransactionsCount})</p>
-              <p className="text-xl font-bold text-blue-700">${cardSalesTotal.toFixed(2)}</p>
+              <p className="text-xl font-bold text-blue-700">{formatCurrencyMXN(cardSalesTotal)}</p>
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Ingresos a caja</p>
-              <p className="text-xl font-bold text-emerald-700">${totalDeposits.toFixed(2)}</p>
+              <p className="text-xl font-bold text-emerald-700">{formatCurrencyMXN(totalDeposits)}</p>
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Retiros de efectivo</p>
-              <p className="text-xl font-bold text-amber-700">${totalWithdrawals.toFixed(2)}</p>
+              <p className="text-xl font-bold text-amber-700">{formatCurrencyMXN(totalWithdrawals)}</p>
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Efectivo contado</p>
-              <p className="text-xl font-bold text-primary">${countedCash.toFixed(2)}</p>
+              <p className="text-xl font-bold text-primary">{formatCurrencyMXN(countedCash)}</p>
             </div>
           </div>
 
@@ -667,7 +668,7 @@ export default function OrdersPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        ${subtotal.toFixed(2)}
+                        {formatCurrencyMXN(subtotal)}
                       </TableCell>
                     </TableRow>
                   );
@@ -685,7 +686,7 @@ export default function OrdersPage() {
                 soldProductsForCut.map((product) => (
                   <div key={product.name} className="flex items-center justify-between gap-2">
                     <span className="truncate">{product.name} x{product.quantity}</span>
-                    <span className="font-medium">${product.total.toFixed(2)}</span>
+                    <span className="font-medium">{formatCurrencyMXN(product.total)}</span>
                   </div>
                 ))
               )}
@@ -701,7 +702,7 @@ export default function OrdersPage() {
                 ) : (
                   <div className="rounded border p-2">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">${openingForCut.amount.toFixed(2)}</span>
+                      <span className="font-medium">{formatCurrencyMXN(openingForCut.amount)}</span>
                       <span className="text-xs text-muted-foreground">
                         {format(new Date(openingForCut.createdAt), "HH:mm", { locale: es })}
                       </span>
@@ -721,7 +722,7 @@ export default function OrdersPage() {
                   depositsForCut.map((entry) => (
                     <div key={entry.id} className="rounded border p-2">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-emerald-700">${entry.amount.toFixed(2)}</span>
+                        <span className="font-medium text-emerald-700">{formatCurrencyMXN(entry.amount)}</span>
                         <span className="text-xs text-muted-foreground">
                           {format(new Date(entry.createdAt), "HH:mm", { locale: es })}
                         </span>
@@ -742,7 +743,7 @@ export default function OrdersPage() {
                   withdrawalsForCut.map((entry) => (
                     <div key={entry.id} className="rounded border p-2">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-amber-700">${entry.amount.toFixed(2)}</span>
+                        <span className="font-medium text-amber-700">{formatCurrencyMXN(entry.amount)}</span>
                         <span className="text-xs text-muted-foreground">
                           {format(new Date(entry.createdAt), "HH:mm", { locale: es })}
                         </span>
@@ -765,7 +766,7 @@ export default function OrdersPage() {
                     .map((sale) => (
                       <div key={`${sale.orderId}-card`} className="flex items-center justify-between gap-2 rounded border p-2">
                         <span className="truncate">#{sale.orderNumber} {sale.customerName}</span>
-                        <span className="font-medium">${sale.total.toFixed(2)}</span>
+                        <span className="font-medium">{formatCurrencyMXN(sale.total)}</span>
                       </div>
                     ))
                 )}
@@ -778,7 +779,7 @@ export default function OrdersPage() {
             <span
               className={`text-lg font-bold ${cashDifference < 0 ? "text-red-600" : cashDifference > 0 ? "text-amber-600" : "text-green-600"}`}
             >
-              ${cashDifference.toFixed(2)}
+              {formatCurrencyMXN(cashDifference)}
             </span>
           </div>
 
@@ -899,7 +900,7 @@ export default function OrdersPage() {
                 <div>
                   <p className="text-xs text-muted-foreground">Total</p>
                   <p className="text-lg font-bold text-primary">
-                    ${selectedOrder.total.toFixed(0)}
+                    {formatCurrencyMXN(selectedOrder.total, 0)}
                   </p>
                 </div>
                 <div>
@@ -948,7 +949,7 @@ export default function OrdersPage() {
                           )}
                       </div>
                       <div className="text-right font-semibold text-foreground">
-                        ${item.subtotal.toFixed(0)}
+                        {formatCurrencyMXN(item.subtotal, 0)}
                       </div>
                     </div>
                   ))}

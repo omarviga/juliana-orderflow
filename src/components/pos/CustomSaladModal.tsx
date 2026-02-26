@@ -17,6 +17,7 @@ import {
   isPremiumToppingIngredient,
 } from "@/lib/salad-rules";
 import { Check } from "lucide-react";
+import { formatCurrencyMXN } from "@/lib/currency";
 
 interface Props {
   open: boolean;
@@ -212,7 +213,7 @@ export function CustomSaladModal({
                   )}
                 >
                   <p className="text-lg font-bold text-foreground">{size.name}</p>
-                  <p className="text-xl font-bold text-primary">${size.price.toFixed(0)}</p>
+                  <p className="text-xl font-bold text-primary">{formatCurrencyMXN(size.price, 0)}</p>
                 </button>
               ))}
             </div>
@@ -221,7 +222,7 @@ export function CustomSaladModal({
           {step === 1 && config && (
             <div>
               <p className="mb-2 text-xs text-muted-foreground">
-                Incluidas: {config.proteinLimit} | Premium (+$25) | Extra: $20/$25
+                Incluidas: {config.proteinLimit} | Premium (+{formatCurrencyMXN(25, 0)}) | Extra: {formatCurrencyMXN(20, 0)}/{formatCurrencyMXN(25, 0)}
               </p>
               <div className="grid grid-cols-2 gap-2">
                 {proteins.map((p) => {
@@ -252,7 +253,7 @@ export function CustomSaladModal({
           {step === 2 && config && (
             <div>
               <p className="mb-2 text-xs text-muted-foreground">
-                Incluidos: {config.toppingLimit} | Premium ($15) | Extra: $10/$15
+                Incluidos: {config.toppingLimit} | Premium ({formatCurrencyMXN(15, 0)}) | Extra: {formatCurrencyMXN(10, 0)}/{formatCurrencyMXN(15, 0)}
               </p>
               <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto">
                 {toppings.map((t) => {
@@ -284,7 +285,7 @@ export function CustomSaladModal({
             <div className="space-y-4">
               <div>
                 <h4 className="mb-2 text-sm font-semibold text-foreground">
-                  Crocantes (1 incluido, extras $10 c/u)
+                  Crocantes (1 incluido, extras {formatCurrencyMXN(10, 0)} c/u)
                 </h4>
                 <div className="grid grid-cols-2 gap-2">
                   {crocantes.map((c) => (
@@ -305,7 +306,7 @@ export function CustomSaladModal({
               </div>
               <div>
                 <h4 className="mb-2 text-sm font-semibold text-foreground">
-                  Aderezos (1 incluido, extras $15 c/u)
+                  Aderezos (1 incluido, extras {formatCurrencyMXN(15, 0)} c/u)
                 </h4>
                 <div className="grid grid-cols-2 gap-2">
                   {aderezos.map((a) => {
@@ -334,7 +335,7 @@ export function CustomSaladModal({
 
         <div className="flex items-center justify-between border-t pt-3">
           <p className="text-lg font-bold text-primary">
-            Total: ${calculatedPrice.toFixed(0)}
+            Total: {formatCurrencyMXN(calculatedPrice, 0)}
           </p>
         </div>
 

@@ -523,14 +523,13 @@ export default function SettingsPage() {
                           currency: value,
                         })
                       }
+                      disabled
                     >
                       <SelectTrigger id="currency">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="MXN">Peso Mexicano (MXN)</SelectItem>
-                        <SelectItem value="USD">Dólar Estadounidense (USD)</SelectItem>
-                        <SelectItem value="EUR">Euro (EUR)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

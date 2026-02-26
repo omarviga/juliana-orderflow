@@ -16,6 +16,7 @@ import {
   isPremiumToppingIngredient,
 } from "@/lib/salad-rules";
 import { Check } from "lucide-react";
+import { formatCurrencyMXN } from "@/lib/currency";
 
 interface Props {
   open: boolean;
@@ -126,12 +127,12 @@ export function HouseSaladExtrasModal({
   };
 
   const ingredientGroups = [
-    { title: "Toppings (+$10)", items: toppings },
-    { title: "Topping Premium (+$15)", items: premiumToppings },
-    { title: "Crocantes (+$10)", items: crocantes },
-    { title: "Proteína (+$20)", items: proteins },
-    { title: "Proteína Premium (+$25)", items: premiumProteins },
-    { title: "Aderezo / Vinagreta (+$15)", items: dressings },
+    { title: `Toppings (+${formatCurrencyMXN(10, 0)})`, items: toppings },
+    { title: `Topping Premium (+${formatCurrencyMXN(15, 0)})`, items: premiumToppings },
+    { title: `Crocantes (+${formatCurrencyMXN(10, 0)})`, items: crocantes },
+    { title: `Proteína (+${formatCurrencyMXN(20, 0)})`, items: proteins },
+    { title: `Proteína Premium (+${formatCurrencyMXN(25, 0)})`, items: premiumProteins },
+    { title: `Aderezo / Vinagreta (+${formatCurrencyMXN(15, 0)})`, items: dressings },
   ];
 
   return (
@@ -181,7 +182,7 @@ export function HouseSaladExtrasModal({
         </div>
 
         <div className="flex items-center justify-between border-t pt-3">
-          <p className="text-lg font-bold text-primary">Total: ${total.toFixed(0)}</p>
+          <p className="text-lg font-bold text-primary">Total: {formatCurrencyMXN(total, 0)}</p>
         </div>
 
         <DialogFooter>

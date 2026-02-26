@@ -4,6 +4,7 @@ import type { CartItem } from "@/types/pos";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { NumPad } from "./NumPad";
 import { useState } from "react";
+import { formatCurrencyMXN } from "@/lib/currency";
 
 const STANDALONE_EXTRA_PRODUCT_NAMES = new Set([
   "EXTRA SUELTO",
@@ -127,7 +128,7 @@ export function CartPanel({
                     </button>
                   </div>
                   <span className="font-semibold text-foreground">
-                    ${item.subtotal.toFixed(0)}
+                    {formatCurrencyMXN(item.subtotal, 0)}
                   </span>
                 </div>
               </div>
@@ -151,7 +152,7 @@ export function CartPanel({
         )}
         <div className="flex items-center justify-between text-lg font-bold">
           <span className="text-foreground">Total</span>
-          <span className="text-primary">${total.toFixed(0)}</span>
+          <span className="text-primary">{formatCurrencyMXN(total, 0)}</span>
         </div>
         <div className="flex gap-2">
           <Button

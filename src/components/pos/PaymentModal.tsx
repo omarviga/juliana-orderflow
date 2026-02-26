@@ -24,6 +24,7 @@ import {
   syncPendingOfflineOrders,
   type OfflineOrderPayload,
 } from "@/lib/offline-orders";
+import { formatCurrencyMXN } from "@/lib/currency";
 
 const STANDALONE_EXTRA_PRODUCT_NAMES = new Set([
   "EXTRA SUELTO",
@@ -386,12 +387,12 @@ export function PaymentModal({ open, onClose, items, total, onOrderComplete }: P
                 {item.quantity}x {getDisplayProductName(item.product.name)}
                 {item.productSize && ` (${item.productSize.name})`}
               </span>
-              <span className="font-medium text-foreground">${item.subtotal.toFixed(0)}</span>
+              <span className="font-medium text-foreground">{formatCurrencyMXN(item.subtotal, 0)}</span>
             </div>
           ))}
           <div className="border-t pt-2 flex justify-between text-lg font-bold">
             <span className="text-foreground">Total</span>
-            <span className="text-primary">${total.toFixed(0)}</span>
+            <span className="text-primary">{formatCurrencyMXN(total, 0)}</span>
           </div>
         </div>
 

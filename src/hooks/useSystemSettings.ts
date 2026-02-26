@@ -30,12 +30,13 @@ const DEFAULT_SETTINGS: SystemSettings = {
 
 const HARD_CODED_BUSINESS: Pick<
   SystemSettings,
-  "businessName" | "businessPhone" | "businessAddress" | "businessCity"
+  "businessName" | "businessPhone" | "businessAddress" | "businessCity" | "currency"
 > = {
   businessName: "JULIANA — BARRA COTIDIANA",
   businessPhone: "417 206 9111",
   businessAddress: "AV. MIGUEL HIDALGO #276, COL CENTRO, ACÁMBARO GTO.",
   businessCity: "Acámbaro, Gto.",
+  currency: "MXN",
 };
 
 const STORAGE_KEY = "systemSettings";
