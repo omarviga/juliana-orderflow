@@ -22,6 +22,8 @@ interface Props {
   onClose: () => void;
   product: Product;
   productSize?: ProductSize;
+  title?: string;
+  requireAtLeastOneSelection?: boolean;
   ingredients: Ingredient[];
   onAddToCart: (
     product: Product,
@@ -46,6 +48,8 @@ export function HouseSaladExtrasModal({
   onClose,
   product,
   productSize,
+  title,
+  requireAtLeastOneSelection = false,
   ingredients,
   onAddToCart,
 }: Props) {
@@ -93,6 +97,8 @@ export function HouseSaladExtrasModal({
   };
 
   const handleAddToCart = () => {
+    if (requireAtLeastOneSelection && selectedIngredients.length === 0) return;
+
     const customizations: SelectedIngredient[] = selectedIngredients.map((ingredient) => {
       let extraCost = 0;
 
@@ -130,7 +136,7 @@ export function HouseSaladExtrasModal({
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-foreground">Extras para {product.name}</DialogTitle>
+          <DialogTitle className="text-foreground">{title || `Extras para ${product.name}`}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -180,7 +186,9 @@ export function HouseSaladExtrasModal({
           <Button variant="outline" onClick={handleClose}>
             Cancelar
           </Button>
-          <Button onClick={handleAddToCart}>Agregar al carrito</Button>
+          <Button onClick={handleAddToCart} disabled={requireAtLeastOneSelection && selectedIngredients.length === 0}>
+            Agregar al carrito
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

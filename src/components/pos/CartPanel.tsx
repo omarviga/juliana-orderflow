@@ -12,9 +12,20 @@ interface Props {
   onRemove: (id: string) => void;
   onClear: () => void;
   onPay: () => void;
+  onAddStandaloneExtra?: () => void;
+  standaloneExtraDisabled?: boolean;
 }
 
-export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, onPay }: Props) {
+export function CartPanel({
+  items,
+  total,
+  onUpdateQuantity,
+  onRemove,
+  onClear,
+  onPay,
+  onAddStandaloneExtra,
+  standaloneExtraDisabled = false,
+}: Props) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
 
   const handleNumPadInput = (value: number) => {
@@ -109,6 +120,16 @@ export function CartPanel({ items, total, onUpdateQuantity, onRemove, onClear, o
       <NumPad onSubmit={handleNumPadInput} />
 
       <div className="border-t p-3 space-y-2">
+        {onAddStandaloneExtra && (
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={onAddStandaloneExtra}
+            disabled={standaloneExtraDisabled}
+          >
+            Agregar extra
+          </Button>
+        )}
         <div className="flex items-center justify-between text-lg font-bold">
           <span className="text-foreground">Total</span>
           <span className="text-primary">${total.toFixed(0)}</span>

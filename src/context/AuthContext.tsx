@@ -34,6 +34,14 @@ async function fetchUserRole(userId: string): Promise<AppRole | null> {
   return data.role === "admin" ? "admin" : "staff";
 }
 
+async function fetchUserRoleWithTimeout(userId: string, timeoutMs: number = 4000): Promise<AppRole | null> {
+  const timeoutPromise = new Promise<null>((resolve) => {
+    setTimeout(() => resolve(null), timeoutMs);
+  });
+
+  return Promise.race([fetchUserRole(userId), timeoutPromise]);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -53,10 +61,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setSession(initialSession);
         setUser(initialSession?.user ?? null);
+        setIsLoading(false);
 
         if (initialSession?.user?.id) {
           try {
-            const userRole = await fetchUserRole(initialSession.user.id);
+            const userRole = await fetchUserRoleWithTimeout(initialSession.user.id);
             if (isMounted) {
               setRole(userRole);
             }
@@ -73,9 +82,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(null);
           setUser(null);
           setRole(null);
-        }
-      } finally {
-        if (isMounted) {
           setIsLoading(false);
         }
       }
@@ -85,22 +91,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!isMounted) return;
+
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
+      setIsLoading(false);
 
       if (nextSession?.user?.id) {
-        try {
-          const userRole = await fetchUserRole(nextSession.user.id);
-          setRole(userRole);
-        } catch {
-          setRole(null);
-        }
+        void fetchUserRoleWithTimeout(nextSession.user.id)
+          .then((userRole) => {
+            if (isMounted) {
+              setRole(userRole);
+            }
+          })
+          .catch(() => {
+            if (isMounted) {
+              setRole(null);
+            }
+          });
       } else {
         setRole(null);
       }
-
-      setIsLoading(false);
     });
 
     return () => {

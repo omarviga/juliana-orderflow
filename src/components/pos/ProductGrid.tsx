@@ -41,7 +41,7 @@ interface Props {
   productSizes: ProductSize[];
   onAddToCart: (product: Product, price: number, size?: ProductSize) => void;
   onCustomize: (product: Product) => void;
-  onCustomizeHouseSalad: (product: Product, size?: ProductSize) => void;
+  onCustomizeHouseSalad: (product: Product) => void;
 }
 
 export function ProductGrid({
@@ -102,84 +102,6 @@ export function ProductGrid({
     );
   }
 
-  if (isBaguetteCategory) {
-    return (
-      <div className="grid grid-cols-2 gap-3 p-3 lg:grid-cols-3">
-        {displayProducts.map((product) => {
-          const sizes = productSizes.filter((s) => s.product_id === product.id);
-          const hasSizes = sizes.length > 0;
-
-          if (product.is_customizable) {
-            return (
-              <Card
-                key={product.id}
-                className="cursor-pointer transition-shadow hover:shadow-md"
-                onClick={() => onCustomize(product)}
-              >
-                <CardContent className="flex flex-col items-center justify-center p-4 text-center">
-                  <span className="mb-2 text-2xl">🥗</span>
-                  <h3 className="font-semibold text-foreground">{product.name}</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Desde $110</p>
-                  <Button size="sm" className="mt-3 w-full gap-1" variant="default">
-                    <Plus className="h-4 w-4" /> Personalizar
-                  </Button>
-                </CardContent>
-              </Card>
-            );
-          }
-
-          if (hasSizes) {
-            const baguetteSize = sizes[0]; // Take first available size
-            const productForModal = { ...product, price: baguetteSize.price };
-            return (
-              <Card key={product.id} className="transition-shadow hover:shadow-md">
-                <CardContent className="flex flex-col items-center justify-center p-4 text-center">
-                  <h3 className="font-semibold text-foreground">{product.name}</h3>
-                  <p className="mt-2 text-lg font-bold text-primary">
-                    ${baguetteSize.price.toFixed(0)}
-                  </p>
-                  <Button
-                    size="sm"
-                    className="mt-3 w-full gap-1"
-                    onClick={() => onCustomizeHouseSalad(productForModal, baguetteSize)}
-                  >
-                    <Plus className="h-4 w-4" /> Agregar / Extras
-                  </Button>
-                </CardContent>
-              </Card>
-            );
-          }
-
-          return (
-            <Card key={product.id} className="transition-shadow hover:shadow-md">
-              <CardContent className="flex flex-col items-center justify-center p-4 text-center">
-                {(() => {
-                  const displayPrice = getDisplayPrice(product, isBeverageCategory);
-                  const productForModal = { ...product, price: displayPrice ?? 0 };
-                  return (
-                    <>
-                      <h3 className="font-semibold text-foreground">{product.name}</h3>
-                      <p className="mt-1 text-lg font-bold text-primary">
-                        ${displayPrice?.toFixed(0)}
-                      </p>
-                      <Button
-                        size="sm"
-                        className="mt-3 w-full gap-1"
-                        onClick={() => onCustomizeHouseSalad(productForModal, undefined)}
-                      >
-                        <Plus className="h-4 w-4" /> Agregar / Extras
-                      </Button>
-                    </>
-                  );
-                })()}
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-    );
-  }
-
   return (
     <div className="grid grid-cols-2 gap-3 p-3 lg:grid-cols-3">
       {displayProducts.map((product) => {
@@ -232,7 +154,7 @@ export function ProductGrid({
                       className="mt-3 w-full gap-1"
                       onClick={() =>
                         isHouseSaladCategory
-                          ? onCustomizeHouseSalad(product, undefined)
+                          ? onCustomizeHouseSalad(product)
                           : onAddToCart(product, displayPrice!, undefined)
                       }
                     >
@@ -367,3 +289,4 @@ function SizedProductCard({
     </Card>
   );
 }
+

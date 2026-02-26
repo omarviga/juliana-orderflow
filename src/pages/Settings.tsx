@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Layout } from "@/components/Layout";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
+import { useCategories, useProducts } from "@/hooks/useMenuData";
 import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +18,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bluetooth, Store, Clock, RotateCcw, Check, Trash2, Plus, QrCode, Upload, ExternalLink, Link as LinkIcon } from "lucide-react";
+import { Bluetooth, Store, Clock, RotateCcw, Check, Trash2, Plus, QrCode, Upload, ExternalLink, Link as LinkIcon, UtensilsCrossed } from "lucide-react";
 import { toast } from "sonner";
 
 const MENU_FILE_STORAGE_KEY = "menu_file_url";
@@ -27,6 +29,9 @@ const ALLOWED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".pdf"];
 
 export default function SettingsPage() {
   const { settings, updateSettings, resetToDefaults } = useSystemSettings();
+  const { data: categories = [] } = useCategories();
+  const { data: products = [] } = useProducts();
+  const queryClient = useQueryClient();
   const {
     preferences,
     pairClientPrinter,
@@ -42,6 +47,40 @@ export default function SettingsPage() {
   const [menuFileName, setMenuFileName] = useState<string>(() => localStorage.getItem(MENU_FILE_NAME_KEY) || "");
   const [selectedMenuFile, setSelectedMenuFile] = useState<File | null>(null);
   const [isUploadingMenu, setIsUploadingMenu] = useState(false);
+  const [newProductName, setNewProductName] = useState("");
+  const [newProductPrice, setNewProductPrice] = useState("");
+  const [newProductCategoryId, setNewProductCategoryId] = useState<string>("");
+  const [priceDraftByProductId, setPriceDraftByProductId] = useState<Record<string, string>>({});
+  const [isSavingMenu, setIsSavingMenu] = useState(false);
+
+  const dessertsCategory = useMemo(
+    () =>
+      categories.find(
+        (category) =>
+          category.name
+            .trim()
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "") === "postres"
+      ) || null,
+    [categories]
+  );
+
+  useEffect(() => {
+    if (!newProductCategoryId && categories.length > 0) {
+      setNewProductCategoryId(categories[0].id);
+    }
+  }, [categories, newProductCategoryId]);
+
+  useEffect(() => {
+    const drafts: Record<string, string> = {};
+    for (const product of products) {
+      if (typeof product.price === "number") {
+        drafts[product.id] = product.price.toFixed(2);
+      }
+    }
+    setPriceDraftByProductId(drafts);
+  }, [products]);
 
   const handleSaveBusinessInfo = async () => {
     setIsSaving(true);
@@ -172,6 +211,97 @@ export default function SettingsPage() {
     toast.success("Referencia de menú eliminada");
   };
 
+  const handleCreateDessertsCategory = async () => {
+    setIsSavingMenu(true);
+    try {
+      const nextOrder = categories.reduce((max, cat) => Math.max(max, cat.display_order), 0) + 1;
+      const { error } = await supabase
+        .from("categories")
+        .insert({ name: "Postres", display_order: nextOrder });
+
+      if (error) throw error;
+
+      await queryClient.invalidateQueries({ queryKey: ["categories"] });
+      toast.success("Categoría Postres creada");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo crear la categoría";
+      toast.error(message);
+    } finally {
+      setIsSavingMenu(false);
+    }
+  };
+
+  const handleCreateProduct = async () => {
+    const trimmedName = newProductName.trim();
+    const parsedPrice = Number(newProductPrice);
+    if (!trimmedName) {
+      toast.error("Ingresa el nombre del producto");
+      return;
+    }
+    if (!newProductCategoryId) {
+      toast.error("Selecciona una categoría");
+      return;
+    }
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+      toast.error("Ingresa un precio válido");
+      return;
+    }
+
+    setIsSavingMenu(true);
+    try {
+      const nextOrder =
+        products
+          .filter((product) => product.category_id === newProductCategoryId)
+          .reduce((max, product) => Math.max(max, product.display_order), 0) + 1;
+
+      const { error } = await supabase.from("products").insert({
+        category_id: newProductCategoryId,
+        name: trimmedName,
+        price: parsedPrice,
+        is_customizable: false,
+        display_order: nextOrder,
+      });
+      if (error) throw error;
+
+      setNewProductName("");
+      setNewProductPrice("");
+      await queryClient.invalidateQueries({ queryKey: ["products"] });
+      toast.success("Producto agregado");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo agregar el producto";
+      toast.error(message);
+    } finally {
+      setIsSavingMenu(false);
+    }
+  };
+
+  const handleUpdateProductPrice = async (productId: string) => {
+    const draftPrice = priceDraftByProductId[productId];
+    const parsedPrice = Number(draftPrice);
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+      toast.error("Precio inválido");
+      return;
+    }
+
+    setIsSavingMenu(true);
+    try {
+      const { error } = await supabase
+        .from("products")
+        .update({ price: parsedPrice })
+        .eq("id", productId);
+
+      if (error) throw error;
+
+      await queryClient.invalidateQueries({ queryKey: ["products"] });
+      toast.success("Precio actualizado");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo actualizar el precio";
+      toast.error(message);
+    } finally {
+      setIsSavingMenu(false);
+    }
+  };
+
   const qrUrl = menuFileUrl
     ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(menuFileUrl)}`
     : "";
@@ -187,7 +317,7 @@ export default function SettingsPage() {
         </div>
 
         <Tabs defaultValue="business" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="business" className="gap-2">
               <Store className="h-4 w-4" />
               <span className="hidden sm:inline">Negocio</span>
@@ -203,6 +333,10 @@ export default function SettingsPage() {
             <TabsTrigger value="menu-qr" className="gap-2">
               <QrCode className="h-4 w-4" />
               <span className="hidden sm:inline">Menú QR</span>
+            </TabsTrigger>
+            <TabsTrigger value="menu-admin" className="gap-2">
+              <UtensilsCrossed className="h-4 w-4" />
+              <span className="hidden sm:inline">Menú POS</span>
             </TabsTrigger>
             <TabsTrigger value="printers" className="gap-2">
               <Bluetooth className="h-4 w-4" />
@@ -481,6 +615,113 @@ export default function SettingsPage() {
                     <Check className="h-4 w-4" />
                     Guardar Preferencias
                   </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB: Menu Admin */}
+          <TabsContent value="menu-admin" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Administrar Menú POS</CardTitle>
+                <CardDescription>
+                  Agrega productos, actualiza precios y crea la categoría Postres.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="flex flex-wrap items-end gap-3 rounded-lg border p-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="new-product-name">Nombre</Label>
+                    <Input
+                      id="new-product-name"
+                      value={newProductName}
+                      onChange={(e) => setNewProductName(e.target.value)}
+                      placeholder="Ej: Cheesecake"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="new-product-price">Precio</Label>
+                    <Input
+                      id="new-product-price"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={newProductPrice}
+                      onChange={(e) => setNewProductPrice(e.target.value)}
+                      placeholder="Ej: 65"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="new-product-category">Categoría</Label>
+                    <Select value={newProductCategoryId} onValueChange={setNewProductCategoryId}>
+                      <SelectTrigger id="new-product-category" className="w-56">
+                        <SelectValue placeholder="Selecciona categoría" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem key={category.id} value={category.id}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button onClick={handleCreateProduct} disabled={isSavingMenu} className="gap-2">
+                    <Plus className="h-4 w-4" />
+                    Agregar producto
+                  </Button>
+                </div>
+
+                {!dessertsCategory && (
+                  <div className="flex items-center justify-between rounded-lg border border-dashed p-3">
+                    <p className="text-sm text-muted-foreground">
+                      La categoría Postres aún no existe.
+                    </p>
+                    <Button variant="outline" onClick={handleCreateDessertsCategory} disabled={isSavingMenu}>
+                      Crear categoría Postres
+                    </Button>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold">Productos y precios</h3>
+                  <div className="space-y-2">
+                    {products.map((product) => (
+                      <div key={product.id} className="grid grid-cols-1 gap-2 rounded-lg border p-3 md:grid-cols-[1fr_220px_120px]">
+                        <div>
+                          <p className="text-sm font-medium">{product.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {categories.find((c) => c.id === product.category_id)?.name || "Sin categoría"}
+                          </p>
+                        </div>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={priceDraftByProductId[product.id] ?? ""}
+                          onChange={(e) =>
+                            setPriceDraftByProductId((prev) => ({
+                              ...prev,
+                              [product.id]: e.target.value,
+                            }))
+                          }
+                        />
+                        <Button
+                          variant="outline"
+                          onClick={() => handleUpdateProductPrice(product.id)}
+                          disabled={isSavingMenu}
+                        >
+                          Guardar precio
+                        </Button>
+                      </div>
+                    ))}
+                    {products.length === 0 && (
+                      <p className="text-sm text-muted-foreground">
+                        No hay productos disponibles.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>

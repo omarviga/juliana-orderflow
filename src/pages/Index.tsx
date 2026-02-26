@@ -10,6 +10,21 @@ import { useCategories, useProducts, useProductSizes, useIngredients } from "@/h
 import { useCart } from "@/hooks/useCart";
 import type { Product, ProductSize, SelectedIngredient } from "@/types/pos";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
+
+const STANDALONE_EXTRA_PRODUCT_CANDIDATES = new Set([
+  "EXTRA SUELTO",
+  "EXTRAS SUELTOS",
+  "EXTRA INDEPENDIENTE",
+  "EXTRAS",
+]);
+
+const normalizeText = (value: string) =>
+  value
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
 
 const Index = () => {
   const { data: categories, isLoading: catLoading } = useCategories();
@@ -22,6 +37,7 @@ const Index = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [customizeProduct, setCustomizeProduct] = useState<Product | null>(null);
   const [showPayment, setShowPayment] = useState(false);
+  const [showStandaloneExtras, setShowStandaloneExtras] = useState(false);
   const [houseSaladProduct, setHouseSaladProduct] = useState<{
     product: Product;
     size?: ProductSize;
@@ -81,13 +97,47 @@ const Index = () => {
   const selectedCategoryData =
     visibleCategories.find((category) => category.id === selectedCategory) || null;
 
-  const filteredProducts =
-    products?.filter((p) => p.category_id === selectedCategory) || [];
+  const filteredProducts = useMemo(() => {
+    const categoryProducts = products?.filter((p) => p.category_id === selectedCategory) || [];
+    const dedupedByName = new Map<string, Product>();
+
+    for (const product of categoryProducts) {
+      const key = normalizeText(product.name);
+      const existing = dedupedByName.get(key);
+      if (!existing) {
+        dedupedByName.set(key, product);
+        continue;
+      }
+
+      // Keep the product with lower display_order, fallback to oldest created_at.
+      if (product.display_order < existing.display_order) {
+        dedupedByName.set(key, product);
+        continue;
+      }
+
+      if (
+        product.display_order === existing.display_order &&
+        new Date(product.created_at).getTime() < new Date(existing.created_at).getTime()
+      ) {
+        dedupedByName.set(key, product);
+      }
+    }
+
+    return [...dedupedByName.values()].sort((a, b) => a.display_order - b.display_order);
+  }, [products, selectedCategory]);
 
   const customizableSizes =
     customizeProduct && productSizes
       ? productSizes.filter((s) => s.product_id === customizeProduct.id)
       : [];
+
+  const standaloneExtrasProduct = useMemo(
+    () =>
+      (products || []).find((product) =>
+        STANDALONE_EXTRA_PRODUCT_CANDIDATES.has(normalizeText(product.name))
+      ) || null,
+    [products]
+  );
 
   const handleAddToCart = (product: Product, price: number, size?: ProductSize) => {
     cart.addItem(product, price, 1, size);
@@ -114,6 +164,14 @@ const Index = () => {
   };
 
   const isLoading = catLoading || prodLoading;
+
+  const handleOpenStandaloneExtras = () => {
+    if (!standaloneExtrasProduct) {
+      toast.error("No se encontró el producto base de extras. Ejecuta la migración de Extras.");
+      return;
+    }
+    setShowStandaloneExtras(true);
+  };
 
   return (
     <Layout>
@@ -164,6 +222,7 @@ const Index = () => {
             onRemove={cart.removeItem}
             onClear={cart.clearCart}
             onPay={() => setShowPayment(true)}
+            onAddStandaloneExtra={handleOpenStandaloneExtras}
           />
         </aside>
       </div>
@@ -187,6 +246,18 @@ const Index = () => {
           product={houseSaladProduct.product}
           productSize={houseSaladProduct.size}
           ingredients={ingredients || []}
+          onAddToCart={handleHouseSaladAdd}
+        />
+      )}
+
+      {showStandaloneExtras && standaloneExtrasProduct && (
+        <HouseSaladExtrasModal
+          open={showStandaloneExtras}
+          onClose={() => setShowStandaloneExtras(false)}
+          product={standaloneExtrasProduct}
+          ingredients={ingredients || []}
+          title="Extras independientes"
+          requireAtLeastOneSelection
           onAddToCart={handleHouseSaladAdd}
         />
       )}

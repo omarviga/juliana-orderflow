@@ -1,4 +1,4 @@
-import { Home, ClipboardList, Settings, LogOut } from "lucide-react";
+import { Home, ClipboardList, Settings, LogOut, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PrinterConfig } from "./PrinterConfig";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 const navItems = [
   { icon: Home, label: "Inicio", path: "/" as const, adminOnly: false },
+  { icon: BarChart3, label: "Dashboard", path: "/dashboard" as const, adminOnly: true },
   { icon: ClipboardList, label: "Pedidos", path: "/orders" as const, adminOnly: true },
   { icon: Settings, label: "Ajustes", path: "/settings" as const, adminOnly: true },
 ];
