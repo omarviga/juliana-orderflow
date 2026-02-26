@@ -33,7 +33,9 @@ const normalizeText = (value: string) =>
 const getDisplayPrice = (product: Product, isBeverageCategory: boolean) => {
   if (!isBeverageCategory) return product.price;
   const key = normalizeText(product.name);
-  return BEVERAGE_PRICE_OVERRIDES[key] ?? product.price;
+  const hasExplicitPrice =
+    typeof product.price === "number" && Number.isFinite(product.price) && product.price >= 0;
+  return hasExplicitPrice ? product.price : BEVERAGE_PRICE_OVERRIDES[key] ?? product.price;
 };
 
 interface Props {
