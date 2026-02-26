@@ -514,27 +514,6 @@ export default function SettingsPage() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="currency">Moneda</Label>
-                    <Select
-                      value={localSettings.currency}
-                      onValueChange={(value) =>
-                        setLocalSettings({
-                          ...localSettings,
-                          currency: value,
-                        })
-                      }
-                      disabled
-                    >
-                      <SelectTrigger id="currency">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="MXN">Peso Mexicano (MXN)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
                     <Label htmlFor="tax-rate">Tasa de Impuesto (%)</Label>
                     <Input
                       id="tax-rate"
