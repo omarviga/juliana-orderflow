@@ -84,6 +84,11 @@ export function PaymentModal({
       if (result.synced > 0) {
         toast.success(`Se sincronizaron ${result.synced} pedidos pendientes`);
       }
+      if (result.failed > 0) {
+        toast.warning(
+          `${result.failed} pedido(s) pendientes no pudieron sincronizarse por un error de datos.`
+        );
+      }
     };
 
     void syncWhenOnline();
@@ -129,7 +134,6 @@ export function PaymentModal({
       unitPrice: item.unitPrice,
       subtotal: item.subtotal,
       customLabel: item.customLabel || null,
-      kitchenNote: item.kitchenNote || null,
       customizationIngredientIds: (item.customizations || []).map((c) => c.ingredient.id),
     })),
   });

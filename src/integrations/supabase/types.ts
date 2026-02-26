@@ -103,7 +103,6 @@ export type Database = {
           created_at: string
           custom_label: string | null
           id: string
-          kitchen_note: string | null
           order_id: string
           product_id: string
           product_size_id: string | null
@@ -115,7 +114,6 @@ export type Database = {
           created_at?: string
           custom_label?: string | null
           id?: string
-          kitchen_note?: string | null
           order_id: string
           product_id: string
           product_size_id?: string | null
@@ -127,7 +125,6 @@ export type Database = {
           created_at?: string
           custom_label?: string | null
           id?: string
-          kitchen_note?: string | null
           order_id?: string
           product_id?: string
           product_size_id?: string | null

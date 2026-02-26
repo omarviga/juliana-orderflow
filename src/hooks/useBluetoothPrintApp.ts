@@ -89,12 +89,6 @@ export function useBluetoothPrintApp() {
 
       window.location.href = schemeUrl;
 
-      setTimeout(() => {
-        toast.error(
-          "Bluetooth Print App no detectada. Instálala desde Play Store"
-        );
-      }, 1000);
-
       return true;
     } catch (error) {
       console.error("Error al enviar a Bluetooth Print App:", error);

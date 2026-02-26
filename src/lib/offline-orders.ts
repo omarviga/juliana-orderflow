@@ -11,7 +11,6 @@ export interface OfflineOrderItem {
   unitPrice: number;
   subtotal: number;
   customLabel: string | null;
-  kitchenNote: string | null;
   customizationIngredientIds: string[];
 }
 
@@ -77,7 +76,9 @@ function isNetworkError(error: unknown): boolean {
   return msg.includes("fetch") || msg.includes("network") || msg.includes("failed to fetch");
 }
 
-async function persistOrder(order: OfflineOrderPayload): Promise<boolean> {
+async function persistOrder(
+  order: OfflineOrderPayload
+): Promise<{ ok: boolean; reason: "network" | "other" }> {
   try {
     const { data: insertedOrder, error: orderError } = await supabase
       .from("orders")
@@ -121,12 +122,14 @@ async function persistOrder(order: OfflineOrderPayload): Promise<boolean> {
       }
     }
 
-    return true;
+    return { ok: true, reason: "other" };
   } catch (error) {
     if (isNetworkError(error)) {
-      return false;
+      return { ok: false, reason: "network" };
     }
-    return false;
+
+    console.error("No se pudo sincronizar pedido offline:", error);
+    return { ok: false, reason: "other" };
   }
 }
 
@@ -138,16 +141,18 @@ export async function syncPendingOfflineOrders() {
 
   const remaining: OfflineOrderPayload[] = [];
   let synced = 0;
+  let failed = 0;
 
   for (const order of queue) {
-    const ok = await persistOrder(order);
-    if (ok) {
+    const result = await persistOrder(order);
+    if (result.ok) {
       synced += 1;
     } else {
       remaining.push(order);
+      if (result.reason === "other") failed += 1;
     }
   }
 
   writeQueue(remaining);
-  return { synced, remaining: remaining.length };
+  return { synced, remaining: remaining.length, failed };
 }

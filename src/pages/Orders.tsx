@@ -1016,11 +1016,6 @@ export default function OrdersPage() {
                             {item.custom_label}
                           </p>
                         )}
-                        {item.kitchen_note && (
-                          <p className="mt-1 text-xs font-medium text-foreground">
-                            Nota cocina: {item.kitchen_note}
-                          </p>
-                        )}
                         {item.customizations &&
                           item.customizations.length > 0 && (
                             <div className="mt-2 space-y-1">

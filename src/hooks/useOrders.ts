@@ -20,7 +20,6 @@ export interface OrderItem {
   unit_price: number;
   subtotal: number;
   custom_label?: string;
-  kitchen_note?: string;
   product?: {
     name: string;
     price?: number;
@@ -61,7 +60,7 @@ export function useOrders(filters?: {
             *,
             product:products(name, price),
             product_size:product_sizes(name, price),
-            order_item_customizations(
+            customizations:order_item_customizations(
               *,
               ingredient:ingredients(name)
             )
@@ -75,10 +74,16 @@ export function useOrders(filters?: {
       }
 
       if (filters?.searchTerm) {
-        const searchLower = filters.searchTerm.toLowerCase();
-        query = query.or(
-          `order_number.ilike.%${searchLower}%,customer_name.ilike.%${searchLower}%`
-        );
+        const search = filters.searchTerm.trim();
+        const escaped = search.replace(/[(),]/g, "");
+        const parsedOrderNumber = Number.parseInt(search, 10);
+        const isNumericSearch = /^[0-9]+$/.test(search) && Number.isFinite(parsedOrderNumber);
+
+        query = isNumericSearch
+          ? query.or(
+              `customer_name.ilike.%${escaped}%,order_number.eq.${parsedOrderNumber}`
+            )
+          : query.ilike("customer_name", `%${escaped}%`);
       }
 
       if (filters?.dateFrom) {
