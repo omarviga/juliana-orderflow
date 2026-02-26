@@ -988,6 +988,48 @@ export default function SettingsPage() {
                     }
                   />
                 </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="open-drawer-80" className="font-medium">
+                      Abrir Cajon en 80mm
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Envía pulso de apertura al cajon al imprimir ticket/corte
+                    </p>
+                  </div>
+                  <Switch
+                    id="open-drawer-80"
+                    checked={preferences.openDrawerOn80mm}
+                    onCheckedChange={(checked) =>
+                      savePreferences({
+                        ...preferences,
+                        openDrawerOn80mm: checked,
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="full-cut-80" className="font-medium">
+                      Corte Completo en 80mm
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Usa corte completo en lugar de parcial para ticket/corte
+                    </p>
+                  </div>
+                  <Switch
+                    id="full-cut-80"
+                    checked={preferences.fullCutOn80mm}
+                    onCheckedChange={(checked) =>
+                      savePreferences({
+                        ...preferences,
+                        fullCutOn80mm: checked,
+                      })
+                    }
+                  />
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

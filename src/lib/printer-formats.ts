@@ -568,7 +568,11 @@ export function generateKitchenOrderHTML(
 export async function printToDevice(
   deviceAddress: string,
   htmlContent: string,
-  printerSize: "80mm" | "58mm"
+  printerSize: "80mm" | "58mm",
+  options?: {
+    openDrawer?: boolean;
+    fullCut?: boolean;
+  }
 ): Promise<void> {
   if (!navigator.bluetooth) {
     throw new Error("Web Bluetooth API no disponible en este navegador");
@@ -631,7 +635,7 @@ export async function printToDevice(
     }
 
     // Convertir HTML a datos imprimibles
-    const printData = htmlToEscPosCommands(htmlContent, printerSize);
+    const printData = htmlToEscPosCommands(htmlContent, printerSize, options);
 
     console.log("Enviando", printData.length, "bytes a la impresora");
 
@@ -668,11 +672,23 @@ export async function printToDevice(
 /**
  * Convierte HTML a comandos ESC/POS para impresoras térmicas
  */
-function htmlToEscPosCommands(html: string, printerSize: "80mm" | "58mm"): number[] {
+function htmlToEscPosCommands(
+  html: string,
+  printerSize: "80mm" | "58mm",
+  options?: {
+    openDrawer?: boolean;
+    fullCut?: boolean;
+  }
+): number[] {
   const commands: number[] = [];
 
   // Inicializar impresora
   commands.push(0x1b, 0x40); // ESC @ - Reset
+
+  // Pulso para abrir cajón (ESC p) cuando se solicita explícitamente.
+  if (options?.openDrawer) {
+    commands.push(0x1b, 0x70, 0x00, 0x19, 0xfa);
+  }
 
   // Configurar tamaño de fuente y área de impresión según tamaño
   if (printerSize === "58mm") {
@@ -712,11 +728,13 @@ function htmlToEscPosCommands(html: string, printerSize: "80mm" | "58mm"): numbe
   // Saltos de línea
   commands.push(0x0a, 0x0a, 0x0a);
 
-  // Corte de papel (parcial)
-  commands.push(0x1d, 0x56, 0x41, 0x00); // GS V - Partial cut
-
-  // Fin de transmisión
-  commands.push(0x1b, 0x69); // ESC i - Partial cut with feed
+  // Corte de papel.
+  if (options?.fullCut) {
+    commands.push(0x1d, 0x56, 0x00); // GS V m=0 - Full cut
+  } else {
+    commands.push(0x1d, 0x56, 0x41, 0x00); // GS V - Partial cut
+    commands.push(0x1b, 0x69); // ESC i - Partial cut with feed
+  }
 
   return commands;
 }

@@ -24,25 +24,30 @@ interface PrinterPreferences {
   autoPrint: boolean;
   useBluetoothIfAvailable: boolean;
   fallbackToWeb: boolean;
+  openDrawerOn80mm: boolean;
+  fullCutOn80mm: boolean;
 }
 
 const STORAGE_KEY = "printerPreferences";
+const DEFAULT_PREFERENCES: PrinterPreferences = {
+  autoPrint: true,
+  useBluetoothIfAvailable: true,
+  fallbackToWeb: true,
+  openDrawerOn80mm: true,
+  fullCutOn80mm: true,
+};
 
 export function useBluetootPrinter() {
   const [preferences, setPreferences] = useState<PrinterPreferences>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return (
-      stored && {
-        ...JSON.parse(stored),
-        autoPrint: true,
-        useBluetoothIfAvailable: true,
-        fallbackToWeb: true,
-      }
-    ) || {
-      autoPrint: true,
-      useBluetoothIfAvailable: true,
-      fallbackToWeb: true,
-    };
+    if (!stored) return DEFAULT_PREFERENCES;
+
+    try {
+      const parsed = JSON.parse(stored) as Partial<PrinterPreferences>;
+      return { ...DEFAULT_PREFERENCES, ...parsed };
+    } catch {
+      return DEFAULT_PREFERENCES;
+    }
   });
 
   const [isPrinting, setIsPrinting] = useState(false);
@@ -206,7 +211,11 @@ export function useBluetootPrinter() {
               await printToDevice(
                 preferences.clientPrinter80mm.address,
                 htmlContent,
-                "80mm"
+                "80mm",
+                {
+                  openDrawer: preferences.openDrawerOn80mm,
+                  fullCut: preferences.fullCutOn80mm,
+                }
               );
               toast.success("Ticket impreso en cliente");
               return;
@@ -251,7 +260,11 @@ export function useBluetootPrinter() {
               await printToDevice(
                 preferences.clientPrinter80mm.address,
                 htmlContent,
-                "80mm"
+                "80mm",
+                {
+                  openDrawer: preferences.openDrawerOn80mm,
+                  fullCut: preferences.fullCutOn80mm,
+                }
               );
               toast.success("Corte de caja impreso");
               return;

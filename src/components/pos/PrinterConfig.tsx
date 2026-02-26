@@ -45,6 +45,20 @@ export function PrinterConfig() {
     });
   };
 
+  const handleToggleOpenDrawer80mm = () => {
+    savePreferences({
+      ...preferences,
+      openDrawerOn80mm: !preferences.openDrawerOn80mm,
+    });
+  };
+
+  const handleToggleFullCut80mm = () => {
+    savePreferences({
+      ...preferences,
+      fullCutOn80mm: !preferences.fullCutOn80mm,
+    });
+  };
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -184,6 +198,28 @@ export function PrinterConfig() {
                 id="fallback"
                 checked={preferences.fallbackToWeb}
                 onCheckedChange={handleToggleFallback}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <Label htmlFor="open-drawer-80" className="font-medium text-foreground">
+                Abrir cajon en 80mm
+              </Label>
+              <Switch
+                id="open-drawer-80"
+                checked={preferences.openDrawerOn80mm}
+                onCheckedChange={handleToggleOpenDrawer80mm}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <Label htmlFor="full-cut-80" className="font-medium text-foreground">
+                Corte completo en 80mm
+              </Label>
+              <Switch
+                id="full-cut-80"
+                checked={preferences.fullCutOn80mm}
+                onCheckedChange={handleToggleFullCut80mm}
               />
             </div>
           </div>
