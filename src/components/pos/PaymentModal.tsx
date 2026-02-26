@@ -194,7 +194,6 @@ export function PaymentModal({
             unit_price: item.unitPrice,
             subtotal: item.subtotal,
             custom_label: item.customLabel || null,
-            kitchen_note: item.kitchenNote || null,
           })
           .select()
           .single();
@@ -233,10 +232,10 @@ export function PaymentModal({
 
           if (printApp.isBluetoothPrintAppAvailable()) {
             const kitchenPrinted = await printApp.printKitchenOrder(
-                items,
-                order.order_number,
-                normalizedCustomerName
-              );
+              items,
+              order.order_number,
+              normalizedCustomerName
+            );
 
             if (kitchenPrinted) {
               await new Promise((resolve) => setTimeout(resolve, 500));

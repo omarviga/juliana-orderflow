@@ -102,7 +102,6 @@ async function persistOrder(order: OfflineOrderPayload): Promise<boolean> {
           unit_price: item.unitPrice,
           subtotal: item.subtotal,
           custom_label: item.customLabel,
-          kitchen_note: item.kitchenNote ?? null,
         })
         .select()
         .single();
