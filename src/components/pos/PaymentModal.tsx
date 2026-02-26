@@ -233,7 +233,7 @@ export function PaymentModal({
       });
       toast.success(`Pedido #${order.order_number} guardado`);
 
-      // Auto-print if enabled
+      // Auto-print if enabled (single ticket)
       if (printer.preferences.autoPrint) {
         setIsAutoPrinting(true);
         try {
@@ -241,26 +241,15 @@ export function PaymentModal({
           let printedWithApp = false;
 
           if (!usePrintGateway && printApp.isBluetoothPrintAppAvailable()) {
-            const kitchenPrinted = await printApp.printKitchenOrder(
+            printedWithApp = await printApp.printClientTicket(
               items,
+              total,
               order.order_number,
               normalizedCustomerName
             );
-
-            if (kitchenPrinted) {
-              await new Promise((resolve) => setTimeout(resolve, 500));
-              const clientPrinted = await printApp.printClientTicket(
-                items,
-                total,
-                order.order_number,
-                normalizedCustomerName
-              );
-              printedWithApp = clientPrinted;
-            }
           }
 
           if (!printedWithApp) {
-            await printWithWebFallback("cocina", order.order_number, normalizedCustomerName);
             await printWithWebFallback("cliente", order.order_number, normalizedCustomerName);
           }
         } catch (err) {
@@ -445,22 +434,14 @@ export function PaymentModal({
                 Imprimiendo...
               </div>
             )}
-            <div className="flex gap-2">
+            <div className="flex">
               <Button
                 variant="outline"
                 className="flex-1 gap-1"
                 onClick={() => printTicket("cliente")}
                 disabled={isAutoPrinting}
               >
-                <Printer className="h-4 w-4" /> Ticket Cliente
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1 gap-1"
-                onClick={() => printTicket("cocina")}
-                disabled={isAutoPrinting}
-              >
-                <Printer className="h-4 w-4" /> Comanda Cocina
+                <Printer className="h-4 w-4" /> Ticket
               </Button>
             </div>
           </div>
