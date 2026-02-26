@@ -61,6 +61,12 @@ function createInitialCounts(): Record<string, number> {
   return Object.fromEntries(CASH_DENOMINATIONS.map((den) => [den.key, 0]));
 }
 
+interface SoldProductSummary {
+  name: string;
+  quantity: number;
+  total: number;
+}
+
 export default function OrdersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<
@@ -74,6 +80,7 @@ export default function OrdersPage() {
   const [cashCounts, setCashCounts] = useState<Record<string, number>>(createInitialCounts);
   const [salesForCut, setSalesForCut] = useState<CashRegisterSale[]>([]);
   const [withdrawalsForCut, setWithdrawalsForCut] = useState<CashWithdrawal[]>([]);
+  const [soldProductsForCut, setSoldProductsForCut] = useState<SoldProductSummary[]>([]);
   const [isFallbackSales, setIsFallbackSales] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [withdrawalAmount, setWithdrawalAmount] = useState("");
@@ -137,6 +144,17 @@ export default function OrdersPage() {
     () => withdrawalsForCut.reduce((sum, entry) => sum + entry.amount, 0),
     [withdrawalsForCut]
   );
+  const cardSalesTotal = useMemo(
+    () =>
+      salesForCut
+        .filter((sale) => sale.paymentMethod === "tarjeta")
+        .reduce((sum, sale) => sum + sale.total, 0),
+    [salesForCut]
+  );
+  const cardTransactionsCount = useMemo(
+    () => salesForCut.filter((sale) => sale.paymentMethod === "tarjeta").length,
+    [salesForCut]
+  );
   const expectedCashNet = expectedCash - totalWithdrawals;
   const cashDifference = countedCash - expectedCashNet;
 
@@ -147,6 +165,43 @@ export default function OrdersPage() {
   const loadTodayWithdrawals = () => {
     const { from, to } = getTodaySalesRange();
     return getCashWithdrawals({ dateFrom: from, dateTo: to });
+  };
+
+  const loadTodaySoldProducts = async (): Promise<SoldProductSummary[]> => {
+    const { from, to } = getTodaySalesRange();
+    const { data, error } = await supabase
+      .from("orders")
+      .select(
+        `
+        created_at,
+        status,
+        order_items(
+          quantity,
+          subtotal,
+          product:products(name)
+        )
+      `
+      )
+      .eq("status", "pagado")
+      .gte("created_at", from.toISOString())
+      .lte("created_at", to.toISOString());
+
+    if (error) {
+      throw error;
+    }
+
+    const productMap = new Map<string, SoldProductSummary>();
+    for (const order of data || []) {
+      for (const item of order.order_items || []) {
+        const name = item.product?.name || "Producto";
+        const existing = productMap.get(name) || { name, quantity: 0, total: 0 };
+        existing.quantity += Number(item.quantity || 0);
+        existing.total += Number(item.subtotal || 0);
+        productMap.set(name, existing);
+      }
+    }
+
+    return [...productMap.values()].sort((a, b) => b.quantity - a.quantity || b.total - a.total);
   };
 
   const loadTodayPaidOrdersFallback = async (): Promise<CashRegisterSale[]> => {
@@ -177,7 +232,15 @@ export default function OrdersPage() {
   const handleOpenCashCut = async () => {
     const todaySales = loadTodaySales();
     const todayWithdrawals = loadTodayWithdrawals();
+    setSoldProductsForCut([]);
     setWithdrawalsForCut(todayWithdrawals);
+    try {
+      const productsSummary = await loadTodaySoldProducts();
+      setSoldProductsForCut(productsSummary);
+    } catch {
+      setSoldProductsForCut([]);
+      toast.error("No se pudo cargar el desglose de productos del día.");
+    }
     if (todaySales.length > 0) {
       setIsFallbackSales(false);
       setSalesForCut(todaySales);
@@ -240,16 +303,37 @@ export default function OrdersPage() {
       minute: "2-digit",
     });
 
-    await printer.printCashCutTicket(salesForCut, generatedAt, "CORTE DE CAJA (HOY)", {
-      expectedCash: expectedCashNet,
-      countedCash,
-      difference: cashDifference,
-      entries: CASH_DENOMINATIONS.map((denomination) => ({
-        label: denomination.label,
-        value: denomination.value,
-        quantity: cashCounts[denomination.key] || 0,
-      })),
-    });
+    await printer.printCashCutTicket(
+      salesForCut,
+      generatedAt,
+      "CORTE DE CAJA (HOY)",
+      {
+        expectedCash: expectedCashNet,
+        countedCash,
+        difference: cashDifference,
+        entries: CASH_DENOMINATIONS.map((denomination) => ({
+          label: denomination.label,
+          value: denomination.value,
+          quantity: cashCounts[denomination.key] || 0,
+        })),
+      },
+      {
+        products: soldProductsForCut,
+        withdrawals: withdrawalsForCut.map((entry) => ({
+          amount: entry.amount,
+          reason: entry.reason,
+          createdAt: entry.createdAt,
+        })),
+        cardTransactions: salesForCut
+          .filter((sale) => sale.paymentMethod === "tarjeta")
+          .map((sale) => ({
+            orderNumber: sale.orderNumber,
+            customerName: sale.customerName,
+            total: sale.total,
+            createdAt: sale.createdAt,
+          })),
+      }
+    );
   };
 
   return (
@@ -400,7 +484,7 @@ export default function OrdersPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Ventas registradas</p>
               <p className="text-xl font-bold text-foreground">{salesForCut.length}</p>
@@ -408,6 +492,10 @@ export default function OrdersPage() {
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Efectivo esperado</p>
               <p className="text-xl font-bold text-foreground">${expectedCashNet.toFixed(0)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Tarjeta ({cardTransactionsCount})</p>
+              <p className="text-xl font-bold text-blue-700">${cardSalesTotal.toFixed(2)}</p>
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Retiros de efectivo</p>
@@ -479,6 +567,63 @@ export default function OrdersPage() {
                 })}
               </TableBody>
             </Table>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+            <div className="rounded-lg border p-3">
+              <p className="mb-2 text-sm font-medium text-foreground">Productos vendidos</p>
+              <div className="max-h-40 space-y-1 overflow-y-auto text-sm">
+                {soldProductsForCut.length === 0 ? (
+                  <p className="text-muted-foreground">Sin productos vendidos hoy.</p>
+                ) : (
+                  soldProductsForCut.map((product) => (
+                    <div key={product.name} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{product.name} x{product.quantity}</span>
+                      <span className="font-medium">${product.total.toFixed(2)}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <p className="mb-2 text-sm font-medium text-foreground">Retiros de efectivo</p>
+              <div className="max-h-40 space-y-1 overflow-y-auto text-sm">
+                {withdrawalsForCut.length === 0 ? (
+                  <p className="text-muted-foreground">Sin retiros registrados hoy.</p>
+                ) : (
+                  withdrawalsForCut.map((entry) => (
+                    <div key={entry.id} className="rounded border p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-amber-700">${entry.amount.toFixed(2)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(entry.createdAt), "HH:mm", { locale: es })}
+                        </span>
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">{entry.reason}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <p className="mb-2 text-sm font-medium text-foreground">Transacciones con tarjeta</p>
+              <div className="max-h-40 space-y-1 overflow-y-auto text-sm">
+                {salesForCut.filter((sale) => sale.paymentMethod === "tarjeta").length === 0 ? (
+                  <p className="text-muted-foreground">Sin pagos con tarjeta hoy.</p>
+                ) : (
+                  salesForCut
+                    .filter((sale) => sale.paymentMethod === "tarjeta")
+                    .map((sale) => (
+                      <div key={`${sale.orderId}-card`} className="flex items-center justify-between gap-2 rounded border p-2">
+                        <span className="truncate">#{sale.orderNumber} {sale.customerName}</span>
+                        <span className="font-medium">${sale.total.toFixed(2)}</span>
+                      </div>
+                    ))
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center justify-between rounded-lg border p-3">

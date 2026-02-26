@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import {
+  type CashCutDetails,
   type CashCutCountSummary,
   generateClientTicketHTML,
   generateCashCutTicketHTML,
@@ -235,11 +236,12 @@ export function useBluetootPrinter() {
       sales: CashRegisterSale[],
       generatedAt: string,
       title: string = "CORTE DE CAJA",
-      countSummary?: CashCutCountSummary
+      countSummary?: CashCutCountSummary,
+      details?: CashCutDetails
     ) => {
       const printJob = async () => {
         try {
-          const htmlContent = generateCashCutTicketHTML(sales, generatedAt, title, countSummary);
+          const htmlContent = generateCashCutTicketHTML(sales, generatedAt, title, countSummary, details);
 
           if (
             preferences.useBluetoothIfAvailable &&

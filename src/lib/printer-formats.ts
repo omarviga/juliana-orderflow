@@ -14,6 +14,31 @@ export interface CashCutCountSummary {
   entries: CashCountEntry[];
 }
 
+export interface CashCutProductSummary {
+  name: string;
+  quantity: number;
+  total: number;
+}
+
+export interface CashCutWithdrawalSummary {
+  amount: number;
+  reason: string;
+  createdAt: string;
+}
+
+export interface CashCutCardTransactionSummary {
+  orderNumber: number;
+  customerName: string;
+  total: number;
+  createdAt: string;
+}
+
+export interface CashCutDetails {
+  products?: CashCutProductSummary[];
+  withdrawals?: CashCutWithdrawalSummary[];
+  cardTransactions?: CashCutCardTransactionSummary[];
+}
+
 interface PrinterConfig {
   width: number; // mm
   charsPerLine: number;
@@ -179,7 +204,8 @@ export function generateCashCutTicketHTML(
   sales: CashRegisterSale[],
   generatedAt: string,
   title: string = "CORTE DE CAJA",
-  countSummary?: CashCutCountSummary
+  countSummary?: CashCutCountSummary,
+  details?: CashCutDetails
 ): string {
   const config = PRINTER_CONFIGS["80mm"];
   const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
@@ -230,6 +256,73 @@ export function generateCashCutTicketHTML(
     `
     : "";
 
+  const productsSection = (details?.products || []).length
+    ? `
+      <div class="sep"></div>
+      <div class="sales-title">PRODUCTOS VENDIDOS</div>
+      ${(details?.products || [])
+        .map(
+          (product) => `
+            <div class="row">
+              <span>${escapeHtml(product.name)} x ${product.quantity}</span>
+              <strong>$${product.total.toFixed(0)}</strong>
+            </div>
+          `
+        )
+        .join("")}
+    `
+    : "";
+
+  const withdrawalsSection = (details?.withdrawals || []).length
+    ? `
+      <div class="sep"></div>
+      <div class="sales-title">RETIROS DE EFECTIVO</div>
+      ${(details?.withdrawals || [])
+        .map((entry) => {
+          const hour = new Date(entry.createdAt).toLocaleTimeString("es-MX", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          });
+          return `
+            <div class="sale-row">
+              <div class="sale-main">
+                <span>${hour}</span>
+                <span>$${entry.amount.toFixed(0)}</span>
+              </div>
+              <div class="sale-meta">${escapeHtml(entry.reason || "Retiro de caja")}</div>
+            </div>
+          `;
+        })
+        .join("")}
+    `
+    : "";
+
+  const cardTransactionsSection = (details?.cardTransactions || []).length
+    ? `
+      <div class="sep"></div>
+      <div class="sales-title">TRANSACCIONES TARJETA</div>
+      ${(details?.cardTransactions || [])
+        .map((tx) => {
+          const hour = new Date(tx.createdAt).toLocaleTimeString("es-MX", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          });
+          return `
+            <div class="sale-row">
+              <div class="sale-main">
+                <span>#${tx.orderNumber}</span>
+                <span>$${tx.total.toFixed(0)}</span>
+              </div>
+              <div class="sale-meta">${hour} · ${escapeHtml(tx.customerName || "Mostrador")}</div>
+            </div>
+          `;
+        })
+        .join("")}
+    `
+    : "";
+
   return `
     <html>
       <head>
@@ -268,6 +361,9 @@ export function generateCashCutTicketHTML(
           <div class="sep"></div>
           <div class="sales-title">DETALLE DE VENTAS</div>
           ${saleRows || "<div class='sale-meta'>Sin ventas registradas.</div>"}
+          ${productsSection}
+          ${withdrawalsSection}
+          ${cardTransactionsSection}
           ${countedSection}
 
           <div class="total-row"><span>TOTAL</span><span>$${totalSales.toFixed(0)}</span></div>
