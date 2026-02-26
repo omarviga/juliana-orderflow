@@ -32,11 +32,15 @@ import { es } from "date-fns/locale";
 import { ChevronRight, Printer } from "lucide-react";
 import type { OrderWithItems } from "@/hooks/useOrders";
 import {
+  getCashOpenings,
   getCashRegisterSales,
-  getCashWithdrawals,
+  getCashMovements,
   getTodaySalesRange,
-  registerCashWithdrawal,
-  type CashWithdrawal,
+  registerCashOpening,
+  registerCashMovement,
+  type CashOpening,
+  type CashMovement,
+  type CashMovementType,
   type CashRegisterSale,
 } from "@/lib/cash-register";
 import { toast } from "sonner";
@@ -76,15 +80,20 @@ export default function OrdersPage() {
     null
   );
   const [cashCutOpen, setCashCutOpen] = useState(false);
-  const [withdrawalOpen, setWithdrawalOpen] = useState(false);
+  const [cashOpeningOpen, setCashOpeningOpen] = useState(false);
+  const [cashMovementOpen, setCashMovementOpen] = useState(false);
+  const [cashMovementType, setCashMovementType] = useState<CashMovementType>("retiro");
   const [cashCounts, setCashCounts] = useState<Record<string, number>>(createInitialCounts);
   const [salesForCut, setSalesForCut] = useState<CashRegisterSale[]>([]);
-  const [withdrawalsForCut, setWithdrawalsForCut] = useState<CashWithdrawal[]>([]);
+  const [openingForCut, setOpeningForCut] = useState<CashOpening | null>(null);
+  const [movementsForCut, setMovementsForCut] = useState<CashMovement[]>([]);
   const [soldProductsForCut, setSoldProductsForCut] = useState<SoldProductSummary[]>([]);
   const [isFallbackSales, setIsFallbackSales] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
-  const [withdrawalAmount, setWithdrawalAmount] = useState("");
-  const [withdrawalReason, setWithdrawalReason] = useState("");
+  const [openingAmount, setOpeningAmount] = useState("");
+  const [openingNote, setOpeningNote] = useState("");
+  const [movementAmount, setMovementAmount] = useState("");
+  const [movementReason, setMovementReason] = useState("");
   const printer = useBluetootPrinter();
 
   useEffect(() => {
@@ -140,9 +149,22 @@ export default function OrdersPage() {
     [cashCounts]
   );
 
+  const openingAmountForCut = openingForCut?.amount || 0;
+  const withdrawalsForCut = useMemo(
+    () => movementsForCut.filter((entry) => entry.type === "retiro"),
+    [movementsForCut]
+  );
+  const depositsForCut = useMemo(
+    () => movementsForCut.filter((entry) => entry.type === "ingreso"),
+    [movementsForCut]
+  );
   const totalWithdrawals = useMemo(
     () => withdrawalsForCut.reduce((sum, entry) => sum + entry.amount, 0),
     [withdrawalsForCut]
+  );
+  const totalDeposits = useMemo(
+    () => depositsForCut.reduce((sum, entry) => sum + entry.amount, 0),
+    [depositsForCut]
   );
   const cardSalesTotal = useMemo(
     () =>
@@ -155,16 +177,22 @@ export default function OrdersPage() {
     () => salesForCut.filter((sale) => sale.paymentMethod === "tarjeta").length,
     [salesForCut]
   );
-  const expectedCashNet = expectedCash - totalWithdrawals;
+  const expectedCashNet = openingAmountForCut + expectedCash + totalDeposits - totalWithdrawals;
   const cashDifference = countedCash - expectedCashNet;
 
   const loadTodaySales = () => {
     const { from, to } = getTodaySalesRange();
     return getCashRegisterSales({ dateFrom: from, dateTo: to });
   };
-  const loadTodayWithdrawals = () => {
+  const loadTodayMovements = () => {
     const { from, to } = getTodaySalesRange();
-    return getCashWithdrawals({ dateFrom: from, dateTo: to });
+    return getCashMovements({ dateFrom: from, dateTo: to });
+  };
+
+  const loadTodayOpening = () => {
+    const { from, to } = getTodaySalesRange();
+    const openings = getCashOpenings({ dateFrom: from, dateTo: to });
+    return openings.length > 0 ? openings[openings.length - 1] : null;
   };
 
   const loadTodaySoldProducts = async (): Promise<SoldProductSummary[]> => {
@@ -231,9 +259,17 @@ export default function OrdersPage() {
 
   const handleOpenCashCut = async () => {
     const todaySales = loadTodaySales();
-    const todayWithdrawals = loadTodayWithdrawals();
+    const todayMovements = loadTodayMovements();
+    const todayOpening = loadTodayOpening();
+    if (!todayOpening) {
+      toast.error("Primero debes registrar la apertura de caja del día.");
+      setCashOpeningOpen(true);
+      return;
+    }
+
     setSoldProductsForCut([]);
-    setWithdrawalsForCut(todayWithdrawals);
+    setMovementsForCut(todayMovements);
+    setOpeningForCut(todayOpening);
     try {
       const productsSummary = await loadTodaySoldProducts();
       setSoldProductsForCut(productsSummary);
@@ -262,30 +298,52 @@ export default function OrdersPage() {
     } catch {
       setIsFallbackSales(false);
       setSalesForCut([]);
-      setWithdrawalsForCut(todayWithdrawals);
+      setMovementsForCut(todayMovements);
       setCashCutOpen(true);
       toast.error("No se pudieron cargar las ventas del día.");
     }
   };
 
-  const handleRegisterWithdrawal = () => {
-    const amount = Number.parseFloat(withdrawalAmount);
+  const handleRegisterOpening = () => {
+    const amount = Number.parseFloat(openingAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error("Ingresa un monto válido para retirar.");
+      toast.error("Ingresa un monto válido para la apertura.");
       return;
     }
 
-    const saved = registerCashWithdrawal({
+    const saved = registerCashOpening({
       amount,
-      reason: withdrawalReason.trim() || "Retiro de caja",
+      note: openingNote.trim() || "Apertura de caja",
     });
 
-    setWithdrawalsForCut(loadTodayWithdrawals());
-    setWithdrawalAmount("");
-    setWithdrawalReason("");
-    setWithdrawalOpen(false);
+    setOpeningForCut(saved);
+    setOpeningAmount("");
+    setOpeningNote("");
+    setCashOpeningOpen(false);
+    toast.success(`Apertura registrada por $${saved.amount.toFixed(2)}`);
+  };
+
+  const handleRegisterCashMovement = () => {
+    const amount = Number.parseFloat(movementAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Ingresa un monto válido.");
+      return;
+    }
+
+    const saved = registerCashMovement({
+      type: cashMovementType,
+      amount,
+      reason:
+        movementReason.trim() ||
+        (cashMovementType === "ingreso" ? "Ingreso a caja" : "Retiro de caja"),
+    });
+
+    setMovementsForCut(loadTodayMovements());
+    setMovementAmount("");
+    setMovementReason("");
+    setCashMovementOpen(false);
     toast.success(
-      `Retiro registrado por $${saved.amount.toFixed(2)} (${saved.reason})`
+      `${cashMovementType === "ingreso" ? "Ingreso" : "Retiro"} registrado por $${saved.amount.toFixed(2)}`
     );
   };
 
@@ -295,6 +353,13 @@ export default function OrdersPage() {
   };
 
   const handlePrintCashCutToday = async () => {
+    if (!openingForCut) {
+      toast.error("No hay apertura de caja registrada para hoy.");
+      setCashCutOpen(false);
+      setCashOpeningOpen(true);
+      return;
+    }
+
     const generatedAt = new Date().toLocaleDateString("es-MX", {
       day: "2-digit",
       month: "2-digit",
@@ -318,7 +383,19 @@ export default function OrdersPage() {
         })),
       },
       {
+        opening: openingForCut
+          ? {
+              amount: openingForCut.amount,
+              note: openingForCut.note,
+              createdAt: openingForCut.createdAt,
+            }
+          : null,
         products: soldProductsForCut,
+        deposits: depositsForCut.map((entry) => ({
+          amount: entry.amount,
+          reason: entry.reason,
+          createdAt: entry.createdAt,
+        })),
         withdrawals: withdrawalsForCut.map((entry) => ({
           amount: entry.amount,
           reason: entry.reason,
@@ -386,9 +463,31 @@ export default function OrdersPage() {
           type="button"
           variant="outline"
           className="sm:ml-auto"
-          onClick={() => setWithdrawalOpen(true)}
+          onClick={() => setCashOpeningOpen(true)}
+        >
+          Apertura de Caja
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            setCashMovementType("retiro");
+            setCashMovementOpen(true);
+          }}
         >
           Retirar Efectivo
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            setCashMovementType("ingreso");
+            setCashMovementOpen(true);
+          }}
+        >
+          Ingresar Efectivo
         </Button>
 
         <Button
@@ -484,10 +583,14 @@ export default function OrdersPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 xl:grid-cols-7">
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Ventas registradas</p>
               <p className="text-xl font-bold text-foreground">{salesForCut.length}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Apertura</p>
+              <p className="text-xl font-bold text-foreground">${openingAmountForCut.toFixed(2)}</p>
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Efectivo esperado</p>
@@ -496,6 +599,10 @@ export default function OrdersPage() {
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Tarjeta ({cardTransactionsCount})</p>
               <p className="text-xl font-bold text-blue-700">${cardSalesTotal.toFixed(2)}</p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Ingresos a caja</p>
+              <p className="text-xl font-bold text-emerald-700">${totalDeposits.toFixed(2)}</p>
             </div>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">Retiros de efectivo</p>
@@ -569,17 +676,57 @@ export default function OrdersPage() {
             </Table>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+          <div className="rounded-lg border p-3">
+            <p className="mb-2 text-sm font-medium text-foreground">Productos vendidos</p>
+            <div className="max-h-40 space-y-1 overflow-y-auto text-sm">
+              {soldProductsForCut.length === 0 ? (
+                <p className="text-muted-foreground">Sin productos vendidos hoy.</p>
+              ) : (
+                soldProductsForCut.map((product) => (
+                  <div key={product.name} className="flex items-center justify-between gap-2">
+                    <span className="truncate">{product.name} x{product.quantity}</span>
+                    <span className="font-medium">${product.total.toFixed(2)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
             <div className="rounded-lg border p-3">
-              <p className="mb-2 text-sm font-medium text-foreground">Productos vendidos</p>
+              <p className="mb-2 text-sm font-medium text-foreground">Apertura de caja</p>
               <div className="max-h-40 space-y-1 overflow-y-auto text-sm">
-                {soldProductsForCut.length === 0 ? (
-                  <p className="text-muted-foreground">Sin productos vendidos hoy.</p>
+                {!openingForCut ? (
+                  <p className="text-muted-foreground">Sin apertura registrada hoy.</p>
                 ) : (
-                  soldProductsForCut.map((product) => (
-                    <div key={product.name} className="flex items-center justify-between gap-2">
-                      <span className="truncate">{product.name} x{product.quantity}</span>
-                      <span className="font-medium">${product.total.toFixed(2)}</span>
+                  <div className="rounded border p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium">${openingForCut.amount.toFixed(2)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {format(new Date(openingForCut.createdAt), "HH:mm", { locale: es })}
+                      </span>
+                    </div>
+                    <p className="truncate text-xs text-muted-foreground">{openingForCut.note}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <p className="mb-2 text-sm font-medium text-foreground">Ingresos a caja</p>
+              <div className="max-h-40 space-y-1 overflow-y-auto text-sm">
+                {depositsForCut.length === 0 ? (
+                  <p className="text-muted-foreground">Sin ingresos registrados hoy.</p>
+                ) : (
+                  depositsForCut.map((entry) => (
+                    <div key={entry.id} className="rounded border p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-emerald-700">${entry.amount.toFixed(2)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(entry.createdAt), "HH:mm", { locale: es })}
+                        </span>
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">{entry.reason}</p>
                     </div>
                   ))
                 )}
@@ -650,10 +797,47 @@ export default function OrdersPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={withdrawalOpen} onOpenChange={setWithdrawalOpen}>
+      <Dialog open={cashOpeningOpen} onOpenChange={setCashOpeningOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Retiro de Efectivo</DialogTitle>
+            <DialogTitle>Apertura de Caja</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Monto inicial</label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={openingAmount}
+                onChange={(event) => setOpeningAmount(event.target.value)}
+                placeholder="Ej. 1000"
+                inputMode="decimal"
+                enterKeyHint="done"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-foreground">Nota</label>
+              <Input
+                value={openingNote}
+                onChange={(event) => setOpeningNote(event.target.value)}
+                placeholder="Fondo inicial"
+              />
+            </div>
+            <Button className="w-full" onClick={handleRegisterOpening}>
+              Guardar apertura
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cashMovementOpen} onOpenChange={setCashMovementOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {cashMovementType === "ingreso" ? "Ingreso de Efectivo" : "Retiro de Efectivo"}
+            </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-3">
@@ -663,8 +847,8 @@ export default function OrdersPage() {
                 type="number"
                 min="0"
                 step="0.01"
-                value={withdrawalAmount}
-                onChange={(event) => setWithdrawalAmount(event.target.value)}
+                value={movementAmount}
+                onChange={(event) => setMovementAmount(event.target.value)}
                 placeholder="Ej. 500"
                 inputMode="decimal"
                 enterKeyHint="done"
@@ -673,13 +857,13 @@ export default function OrdersPage() {
             <div className="space-y-1">
               <label className="text-sm font-medium text-foreground">Motivo</label>
               <Input
-                value={withdrawalReason}
-                onChange={(event) => setWithdrawalReason(event.target.value)}
+                value={movementReason}
+                onChange={(event) => setMovementReason(event.target.value)}
                 placeholder="Caja chica, depósito, etc."
               />
             </div>
-            <Button className="w-full" onClick={handleRegisterWithdrawal}>
-              Guardar retiro
+            <Button className="w-full" onClick={handleRegisterCashMovement}>
+              Guardar {cashMovementType}
             </Button>
           </div>
         </DialogContent>

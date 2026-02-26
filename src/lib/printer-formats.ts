@@ -34,7 +34,13 @@ export interface CashCutCardTransactionSummary {
 }
 
 export interface CashCutDetails {
+  opening?: {
+    amount: number;
+    note: string;
+    createdAt: string;
+  } | null;
   products?: CashCutProductSummary[];
+  deposits?: CashCutWithdrawalSummary[];
   withdrawals?: CashCutWithdrawalSummary[];
   cardTransactions?: CashCutCardTransactionSummary[];
 }
@@ -273,6 +279,47 @@ export function generateCashCutTicketHTML(
     `
     : "";
 
+  const openingSection = details?.opening
+    ? `
+      <div class="sep"></div>
+      <div class="sales-title">APERTURA DE CAJA</div>
+      <div class="row">
+        <span>${escapeHtml(details.opening.note || "Apertura")}</span>
+        <strong>$${details.opening.amount.toFixed(0)}</strong>
+      </div>
+      <div class="sale-meta">${new Date(details.opening.createdAt).toLocaleTimeString("es-MX", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })}</div>
+    `
+    : "";
+
+  const depositsSection = (details?.deposits || []).length
+    ? `
+      <div class="sep"></div>
+      <div class="sales-title">INGRESOS A CAJA</div>
+      ${(details?.deposits || [])
+        .map((entry) => {
+          const hour = new Date(entry.createdAt).toLocaleTimeString("es-MX", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          });
+          return `
+            <div class="sale-row">
+              <div class="sale-main">
+                <span>${hour}</span>
+                <span>$${entry.amount.toFixed(0)}</span>
+              </div>
+              <div class="sale-meta">${escapeHtml(entry.reason || "Ingreso a caja")}</div>
+            </div>
+          `;
+        })
+        .join("")}
+    `
+    : "";
+
   const withdrawalsSection = (details?.withdrawals || []).length
     ? `
       <div class="sep"></div>
@@ -361,7 +408,9 @@ export function generateCashCutTicketHTML(
           <div class="sep"></div>
           <div class="sales-title">DETALLE DE VENTAS</div>
           ${saleRows || "<div class='sale-meta'>Sin ventas registradas.</div>"}
+          ${openingSection}
           ${productsSection}
+          ${depositsSection}
           ${withdrawalsSection}
           ${cardTransactionsSection}
           ${countedSection}
