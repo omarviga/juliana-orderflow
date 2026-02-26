@@ -14,6 +14,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -619,6 +620,9 @@ export default function OrdersPage() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Corte de Caja (Hoy)</DialogTitle>
+            <DialogDescription>
+              Revisa ventas, conteo de efectivo y registra el corte del día.
+            </DialogDescription>
           </DialogHeader>
           {isFallbackSales && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -871,6 +875,9 @@ export default function OrdersPage() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Apertura de Caja</DialogTitle>
+            <DialogDescription>
+              Captura el fondo inicial para abrir la caja.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
@@ -908,6 +915,9 @@ export default function OrdersPage() {
             <DialogTitle>
               {cashMovementType === "ingreso" ? "Ingreso de Efectivo" : "Retiro de Efectivo"}
             </DialogTitle>
+            <DialogDescription>
+              Registra el monto y motivo del movimiento de caja.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
@@ -946,6 +956,9 @@ export default function OrdersPage() {
             <DialogTitle>
               Pedido #{selectedOrder?.order_number}
             </DialogTitle>
+            <DialogDescription>
+              Consulta el detalle completo del pedido seleccionado.
+            </DialogDescription>
           </DialogHeader>
 
           {selectedOrder && (

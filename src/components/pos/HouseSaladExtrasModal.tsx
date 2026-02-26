@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -140,6 +141,9 @@ export function HouseSaladExtrasModal({
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-foreground">{title || `Extras para ${product.name}`}</DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            Selecciona los extras para esta ensalada y confirma para agregar al carrito.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">

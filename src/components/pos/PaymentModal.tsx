@@ -97,10 +97,24 @@ export function PaymentModal({
     active?.blur();
   };
 
+  const getErrorMessage = (error: unknown) => {
+    if (error instanceof Error) return error.message;
+
+    if (typeof error === "object" && error !== null) {
+      const record = error as Record<string, unknown>;
+      if (typeof record.message === "string" && record.message.trim()) return record.message;
+      if (typeof record.error_description === "string" && record.error_description.trim()) {
+        return record.error_description;
+      }
+      if (typeof record.details === "string" && record.details.trim()) return record.details;
+    }
+
+    return "Error desconocido";
+  };
+
   const isNetworkError = (error: unknown) => {
     if (typeof navigator !== "undefined" && !navigator.onLine) return true;
-    if (!(error instanceof Error)) return false;
-    const msg = error.message.toLowerCase();
+    const msg = getErrorMessage(error).toLowerCase();
     return msg.includes("fetch") || msg.includes("network") || msg.includes("failed to fetch");
   };
 
@@ -265,8 +279,7 @@ export function PaymentModal({
         );
         return;
       }
-      const message = err instanceof Error ? err.message : "Error desconocido";
-      toast.error("Error al guardar: " + message);
+      toast.error("Error al guardar: " + getErrorMessage(err));
     } finally {
       setSaving(false);
     }

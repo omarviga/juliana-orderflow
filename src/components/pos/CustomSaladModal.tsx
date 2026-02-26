@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -182,6 +183,9 @@ export function CustomSaladModal({
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-foreground">Arma tu Ensalada</DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            Elige tamaño e ingredientes para personalizar tu ensalada antes de agregarla al carrito.
+          </DialogDescription>
           <div className="flex gap-1 mt-2">
             {steps.map((s, i) => (
               <div
