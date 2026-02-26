@@ -48,7 +48,17 @@ export function useCart() {
     setItems([]);
   }, []);
 
+  const updateKitchenNote = useCallback((id: string, kitchenNote: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? { ...item, kitchenNote: kitchenNote.trim() || undefined }
+          : item
+      )
+    );
+  }, []);
+
   const total = items.reduce((sum, item) => sum + item.subtotal, 0);
 
-  return { items, addItem, removeItem, updateQuantity, clearCart, total };
+  return { items, addItem, removeItem, updateQuantity, updateKitchenNote, clearCart, total };
 }

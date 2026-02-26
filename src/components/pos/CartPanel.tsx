@@ -29,6 +29,7 @@ interface Props {
   items: CartItem[];
   total: number;
   onUpdateQuantity: (id: string, qty: number) => void;
+  onUpdateKitchenNote: (id: string, note: string) => void;
   onRemove: (id: string) => void;
   onClear: () => void;
   onPay: () => void;
@@ -41,6 +42,7 @@ export function CartPanel({
   items,
   total,
   onUpdateQuantity,
+  onUpdateKitchenNote,
   onRemove,
   onClear,
   onPay,
@@ -54,6 +56,15 @@ export function CartPanel({
     if (selectedItemId && value > 0) {
       onUpdateQuantity(selectedItemId, value);
     }
+  };
+
+  const handleKitchenNote = (id: string, currentNote?: string) => {
+    const note = window.prompt(
+      "Nota para cocina (deja vacio para eliminarla):",
+      currentNote || ""
+    );
+    if (note === null) return;
+    onUpdateKitchenNote(id, note);
   };
 
   return (
@@ -96,6 +107,11 @@ export function CartPanel({
                         {item.customLabel}
                       </p>
                     )}
+                    {item.kitchenNote && (
+                      <p className="mt-0.5 text-xs font-medium text-foreground">
+                        Nota cocina: {item.kitchenNote}
+                      </p>
+                    )}
                   </div>
                   <button
                     onClick={(e) => {
@@ -109,6 +125,15 @@ export function CartPanel({
                 </div>
                 <div className="mt-1.5 flex items-center justify-between">
                   <div className="flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleKitchenNote(item.id, item.kitchenNote);
+                      }}
+                      className="rounded border border-border px-1.5 py-0.5 text-[11px] hover:bg-accent"
+                    >
+                      Nota
+                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

@@ -9,6 +9,7 @@ interface CartItem {
     name: string;
   };
   customLabel?: string;
+  kitchenNote?: string;
 }
 
 interface PrinterData {
@@ -101,6 +102,10 @@ serve(async (req) => {
 
       if (item.customLabel) {
         data.push(createTextEntry(`  • ${item.customLabel}`, 0, 0, 0));
+      }
+
+      if (item.kitchenNote) {
+        data.push(createTextEntry(`  Nota: ${item.kitchenNote}`, 0, 0, 0));
       }
     });
 

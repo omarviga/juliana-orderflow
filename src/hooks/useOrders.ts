@@ -20,6 +20,7 @@ export interface OrderItem {
   unit_price: number;
   subtotal: number;
   custom_label?: string;
+  kitchen_note?: string;
   product?: {
     name: string;
     price?: number;

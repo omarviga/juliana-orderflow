@@ -14,6 +14,7 @@ export interface CartItem {
   subtotal: number;
   customizations?: SelectedIngredient[];
   customLabel?: string;
+  kitchenNote?: string;
 }
 
 export interface SelectedIngredient {

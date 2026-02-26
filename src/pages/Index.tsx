@@ -251,6 +251,7 @@ const Index = () => {
             items={cart.items}
             total={cart.total}
             onUpdateQuantity={cart.updateQuantity}
+            onUpdateKitchenNote={cart.updateKitchenNote}
             onRemove={cart.removeItem}
             onClear={cart.clearCart}
             onPay={handleOpenPayment}

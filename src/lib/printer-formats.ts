@@ -540,8 +540,16 @@ export function generateKitchenOrderHTML(
       html += `<div class="ingredient" style="margin-top: 0.5mm; font-style: italic; color: #000;">📝 ${item.customLabel}</div>`;
     }
 
+    if (item.kitchenNote) {
+      html += `<div class="ingredient" style="margin-top: 0.5mm; font-style: italic; color: #000; text-transform: none;">Nota cocina: ${escapeHtml(item.kitchenNote)}</div>`;
+    }
+
     // Si no tiene ingredientes
-    if ((!item.customizations || item.customizations.length === 0) && !item.customLabel) {
+    if (
+      (!item.customizations || item.customizations.length === 0) &&
+      !item.customLabel &&
+      !item.kitchenNote
+    ) {
       html += `<div class="ingredient">Sin modificaciones</div>`;
     }
 
