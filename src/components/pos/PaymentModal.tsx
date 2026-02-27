@@ -124,11 +124,7 @@ export function PaymentModal({
     return msg.includes("fetch") || msg.includes("network") || msg.includes("failed to fetch");
   };
 
-  const printWithWebFallback = async (
-    type: "cliente" | "cocina",
-    orderNumber: number | null,
-    orderCustomerName: string
-  ) => {
+  const printCombinedTickets = async (orderNumber: number | null, orderCustomerName: string) => {
     const now = new Date();
     const dateStr = now.toLocaleDateString("es-MX", {
       day: "2-digit",
@@ -138,19 +134,14 @@ export function PaymentModal({
       minute: "2-digit",
     });
 
-    if (type === "cliente") {
-      await printer.printClientTicket(
-        items,
-        total,
-        orderNumber,
-        orderCustomerName,
-        dateStr,
-        getPaymentMethodLabel(paymentMethod)
-      );
-      return;
-    }
-
-    await printer.printKitchenOrder(items, orderNumber, orderCustomerName, dateStr);
+    await printer.printKitchenAndClientCombined(
+      items,
+      total,
+      orderNumber,
+      orderCustomerName,
+      dateStr,
+      getPaymentMethodLabel(paymentMethod)
+    );
   };
 
   const buildOfflinePayload = (normalizedCustomerName: string): Omit<OfflineOrderPayload, "localId" | "localOrderNumber" | "createdAt"> => ({
@@ -228,11 +219,11 @@ export function PaymentModal({
       });
       toast.success(`Pedido #${order.order_number} guardado`);
 
-      // Auto-print if enabled (single ticket)
+      // Auto-print kitchen + client in one job.
       if (printer.preferences.autoPrint) {
         setIsAutoPrinting(true);
         try {
-          await printWithWebFallback("cliente", order.order_number, normalizedCustomerName);
+          await printCombinedTickets(order.order_number, normalizedCustomerName);
         } catch (err) {
           console.error("Error en impresión automática:", err);
           toast.warning("No se pudo imprimir automáticamente");
@@ -264,10 +255,10 @@ export function PaymentModal({
     }
   };
 
-  const printTicket = async (type: "cliente" | "cocina") => {
+  const printTicket = async () => {
     setIsAutoPrinting(true);
     try {
-      await printWithWebFallback(type, savedOrderNumber, customerName);
+      await printCombinedTickets(savedOrderNumber, customerName);
     } catch (err) {
       console.error("Error al imprimir:", err);
       toast.error("Error al imprimir");
@@ -407,10 +398,10 @@ export function PaymentModal({
               <Button
                 variant="outline"
                 className="flex-1 gap-1"
-                onClick={() => printTicket("cliente")}
+                onClick={printTicket}
                 disabled={isAutoPrinting}
               >
-                <Printer className="h-4 w-4" /> Ticket
+                <Printer className="h-4 w-4" /> Cocina + Ticket
               </Button>
             </div>
           </div>

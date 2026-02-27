@@ -6,6 +6,7 @@ import {
   generateClientTicketHTML,
   generateCashCutTicketHTML,
   generateKitchenOrderHTML,
+  printMultipleToDevice,
   printToDevice,
   printViaBrowser,
 } from "@/lib/printer-formats";
@@ -330,8 +331,8 @@ export function useBluetootPrinter() {
           await printWithPreferences(
             htmlContent,
             "Comanda Cocina",
-            "58mm",
-            preferences.kitchenPrinter58mm
+            "80mm",
+            preferences.clientPrinter80mm
           );
         } catch (error) {
           console.error("Error al imprimir comanda:", error);
@@ -345,6 +346,74 @@ export function useBluetootPrinter() {
     [enqueuePrintJob, preferences, printWithPreferences]
   );
 
+  const printKitchenAndClientCombined = useCallback(
+    async (
+      items: CartItem[],
+      total: number,
+      orderNumber: number | null,
+      customerName: string,
+      dateStr: string,
+      paymentMethodLabel: string = "Efectivo"
+    ) => {
+      const printJob = async () => {
+        const kitchenHtml = generateKitchenOrderHTML(items, orderNumber, customerName, dateStr);
+        const clientHtml = generateClientTicketHTML(
+          items,
+          total,
+          orderNumber,
+          customerName,
+          dateStr,
+          paymentMethodLabel
+        );
+
+        if (preferences.useBluetoothIfAvailable) {
+          const printer80 = preferences.clientPrinter80mm;
+          if (printer80?.address) {
+            try {
+              await printMultipleToDevice(printer80.address, [
+                {
+                  htmlContent: kitchenHtml,
+                  printerSize: "80mm",
+                  options: {
+                    openDrawer: false,
+                    fullCut: preferences.fullCutOn80mm,
+                  },
+                },
+                {
+                  htmlContent: clientHtml,
+                  printerSize: "80mm",
+                  options: {
+                    openDrawer: preferences.openDrawerOn80mm,
+                    fullCut: preferences.fullCutOn80mm,
+                  },
+                },
+              ]);
+              toast.success("Comanda y ticket enviados en un solo trabajo (80mm)");
+              return;
+            } catch (error) {
+              console.error("Error al imprimir trabajo combinado por Bluetooth:", error);
+              if (!preferences.fallbackToWeb) {
+                throw error;
+              }
+              toast.warning("Bluetooth falló. Usando impresión por navegador.");
+            }
+          } else if (!preferences.fallbackToWeb) {
+            throw new Error("No hay impresora 80mm emparejada.");
+          }
+        }
+
+        const combinedHtml = `${kitchenHtml}
+          <div style="page-break-after: always;"></div>
+          ${clientHtml}`;
+        printViaBrowser(combinedHtml, "Comanda + Ticket");
+        toast.success("Comanda y ticket listos para imprimir");
+      };
+
+      await enqueuePrintJob(printJob);
+    },
+    [enqueuePrintJob, preferences]
+  );
+
   // Imprimir ambos documentos (cliente y cocina)
   const printBoth = useCallback(
     async (
@@ -352,13 +421,19 @@ export function useBluetootPrinter() {
       total: number,
       orderNumber: number | null,
       customerName: string,
-      dateStr: string
+      dateStr: string,
+      paymentMethodLabel: string = "Efectivo"
     ) => {
-      // Primero cocina, luego cliente
-      await printKitchenOrder(items, orderNumber, customerName, dateStr);
-      await printClientTicket(items, total, orderNumber, customerName, dateStr);
+      await printKitchenAndClientCombined(
+        items,
+        total,
+        orderNumber,
+        customerName,
+        dateStr,
+        paymentMethodLabel
+      );
     },
-    [printKitchenOrder, printClientTicket]
+    [printKitchenAndClientCombined]
   );
 
   // Desemparejar impresora 80mm
@@ -385,6 +460,7 @@ export function useBluetootPrinter() {
     printClientTicket,
     printCashCutTicket,
     printKitchenOrder,
+    printKitchenAndClientCombined,
     printBoth,
     isPrinting,
     queueLength: printQueue.length,

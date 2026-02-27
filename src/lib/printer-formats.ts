@@ -587,8 +587,32 @@ export async function printToDevice(
     fullCut?: boolean;
   }
 ): Promise<void> {
+  await printMultipleToDevice(deviceAddress, [
+    {
+      htmlContent,
+      printerSize,
+      options,
+    },
+  ]);
+}
+
+export async function printMultipleToDevice(
+  deviceAddress: string,
+  jobs: Array<{
+    htmlContent: string;
+    printerSize: "80mm" | "58mm";
+    options?: {
+      openDrawer?: boolean;
+      fullCut?: boolean;
+    };
+  }>
+): Promise<void> {
   if (!navigator.bluetooth) {
     throw new Error("Web Bluetooth API no disponible en este navegador");
+  }
+
+  if (jobs.length === 0) {
+    return;
   }
 
   try {
@@ -647,8 +671,12 @@ export async function printToDevice(
       }
     }
 
-    // Convertir HTML a datos imprimibles
-    const printData = htmlToEscPosCommands(htmlContent, printerSize, options);
+    // Convertir todos los HTML a datos imprimibles en un solo trabajo.
+    const printData = jobs.flatMap((job, index) =>
+      htmlToEscPosCommands(job.htmlContent, job.printerSize, job.options, {
+        includeInit: index === 0,
+      })
+    );
 
     console.log("Enviando", printData.length, "bytes a la impresora");
 
@@ -691,12 +719,17 @@ function htmlToEscPosCommands(
   options?: {
     openDrawer?: boolean;
     fullCut?: boolean;
+  },
+  commandOptions?: {
+    includeInit?: boolean;
   }
 ): number[] {
   const commands: number[] = [];
 
   // Inicializar impresora
-  commands.push(0x1b, 0x40); // ESC @ - Reset
+  if (commandOptions?.includeInit !== false) {
+    commands.push(0x1b, 0x40); // ESC @ - Reset
+  }
 
   // Pulso para abrir cajón (ESC p) cuando se solicita explícitamente.
   if (options?.openDrawer) {
