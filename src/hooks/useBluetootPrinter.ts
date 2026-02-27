@@ -793,11 +793,18 @@ export function useBluetootPrinter() {
           }
         }
         
-        // Fallback to CUPS or Browser printing if bluetooth is not used or fails
+        // Fallback en misma ventana: primero navegador para garantizar operación inmediata.
         const kitchenHtml = generateKitchenOrderHTML(items, orderNumber, customerName, dateStr);
         const clientHtml = generateClientTicketHTML(
           items, total, orderNumber, customerName, dateStr, paymentMethodLabel
         );
+        const combinedHtml = `${kitchenHtml}<div style="page-break-after: always;"></div>${clientHtml}`;
+
+        if (!REQUIRE_SERVER_PRINT) {
+          printViaBrowser(combinedHtml, "Comanda + Ticket");
+          toast.success("Comanda y ticket listos para imprimir");
+          return;
+        }
 
         if (CUPS_PRINTER_URL) {
           try {
@@ -818,12 +825,10 @@ export function useBluetootPrinter() {
             return;
           } catch (combinedError) {
             console.error("Error al imprimir trabajo combinado por servidor:", combinedError);
-            toast.warning("Servidor de impresión lento/no disponible. Abriendo vista de impresión.");
           }
         }
-        
-        // Final fallback: Browser printing
-        const combinedHtml = `${kitchenHtml}<div style="page-break-after: always;"></div>${clientHtml}`;
+
+        // Garantía final: siempre abrir impresión en la misma ventana.
         printViaBrowser(combinedHtml, "Comanda + Ticket");
         toast.success("Comanda y ticket listos para imprimir");
       };
