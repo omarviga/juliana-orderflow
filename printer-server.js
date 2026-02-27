@@ -9,9 +9,9 @@
  * Desde Juliana POS, usa: my.bluetoothprint.scheme://http://localhost:3001/api/print/ticket
  */
 
-const express = require("express");
-const cors = require("cors");
-const { spawn } = require("child_process");
+import express from "express";
+import cors from "cors";
+import { spawn } from "node:child_process";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -28,9 +28,9 @@ const LP_TIMEOUT_MS = Number(process.env.LP_TIMEOUT_MS || 12000);
 app.use(cors());
 app.use(express.json());
 
-function printWithLp({ destination, title, text, timeoutMs = LP_TIMEOUT_MS }) {
+function printWithLp({ destination, title, text, timeoutMs = LP_TIMEOUT_MS, raw = false }) {
   return new Promise((resolve, reject) => {
-    const args = ["-d", destination, "-t", title];
+    const args = ["-d", destination, "-t", title, ...(raw ? ["-o", "raw"] : [])];
     const child = spawn("lp", args, { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
@@ -69,9 +69,154 @@ function printWithLp({ destination, title, text, timeoutMs = LP_TIMEOUT_MS }) {
       reject(new Error(stderr.trim() || `lp terminó con código ${code}`));
     });
 
-    child.stdin.write(text);
-    child.stdin.end();
+    child.stdin.end(text);
   });
+}
+
+function runCommand(command, args = [], timeoutMs = 4000) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill("SIGKILL");
+      reject(new Error(`Timeout ejecutando ${command}`));
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(error);
+    });
+
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
+        return;
+      }
+      reject(new Error(stderr.trim() || `${command} terminó con código ${code}`));
+    });
+  });
+}
+
+async function checkLpAvailable() {
+  try {
+    await runCommand("lp", ["-V"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function getPrintersStatus() {
+  const lpAvailable = await checkLpAvailable();
+  if (!lpAvailable) {
+    return {
+      lpAvailable: false,
+      defaultPrinter: null,
+      printers: [],
+      error: "No se encontró el comando 'lp'. Instala CUPS (cups-client).",
+    };
+  }
+
+  let printers = [];
+  let defaultPrinter = null;
+
+  try {
+    const { stdout } = await runCommand("lpstat", ["-p"]);
+    printers = stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("printer "))
+      .map((line) => {
+        const match = line.match(/^printer\s+(\S+)\s+/);
+        return match ? match[1] : null;
+      })
+      .filter(Boolean);
+  } catch {
+    printers = [];
+  }
+
+  try {
+    const { stdout } = await runCommand("lpstat", ["-d"]);
+    const match = stdout.match(/system default destination:\s*(\S+)/i);
+    if (match?.[1]) defaultPrinter = match[1];
+  } catch {
+    defaultPrinter = null;
+  }
+
+  return {
+    lpAvailable,
+    defaultPrinter,
+    printers,
+    error: null,
+  };
+}
+
+
+
+const ESC_POS = {
+  INIT: Buffer.from([0x1b, 0x40]),
+  OPEN_DRAWER: Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]),
+  PARTIAL_CUT: Buffer.from([0x1d, 0x56, 0x42, 0x00]),
+  FULL_CUT: Buffer.from([0x1d, 0x56, 0x00]),
+};
+
+function buildEscPosDocument(lines, options = {}) {
+  const { includeInit = false, openDrawer = false, fullCut = true } = options;
+  const text = `${lines.join("\n")}\n\n`;
+  const chunks = [];
+
+  if (includeInit) chunks.push(ESC_POS.INIT);
+  if (openDrawer) chunks.push(ESC_POS.OPEN_DRAWER);
+  chunks.push(Buffer.from(text, "utf8"));
+  chunks.push(fullCut ? ESC_POS.FULL_CUT : ESC_POS.PARTIAL_CUT);
+  chunks.push(Buffer.from("\n", "utf8"));
+
+  return Buffer.concat(chunks);
+}
+
+async function resolvePrinterDestination(type, requestedPrinter) {
+  if (requestedPrinter && String(requestedPrinter).trim()) {
+    return String(requestedPrinter).trim();
+  }
+
+  const envDestination = type === "kitchen" ? PRINTER_58MM_NAME : PRINTER_80MM_NAME;
+  const status = await getPrintersStatus();
+
+  if (!status.lpAvailable) {
+    throw new Error(status.error || "CUPS/lp no está disponible");
+  }
+
+  if (status.printers.includes(envDestination)) {
+    return envDestination;
+  }
+
+  if (status.defaultPrinter) {
+    return status.defaultPrinter;
+  }
+
+  if (status.printers.length > 0) {
+    return status.printers[0];
+  }
+
+  throw new Error("No hay impresoras registradas en CUPS (lpstat -p)");
 }
 
 // Tipos para el datos de impresora
@@ -286,6 +431,19 @@ app.get("/", (req, res) => {
       ticketPdf: "POST /api/print/ticket/pdf",
       kitchen: "POST /api/print/kitchen",
       kitchenPdf: "POST /api/print/kitchen/pdf",
+      combined: "POST /api/print/combined",
+    },
+  });
+});
+
+app.get("/api/print/status", async (req, res) => {
+  const status = await getPrintersStatus();
+  res.json({
+    ok: status.lpAvailable,
+    ...status,
+    configured: {
+      printer80mm: PRINTER_80MM_NAME,
+      printer58mm: PRINTER_58MM_NAME,
     },
   });
 });
@@ -297,9 +455,84 @@ app.get("/", (req, res) => {
 //   "lines": ["texto 1", "texto 2"], // opcional
 //   "payload": { ... } // opcional, para generar líneas automáticamente
 // }
+
+
+app.post("/api/print/combined", async (req, res) => {
+  const {
+    payload = {},
+    clientPayload,
+    kitchenPayload,
+    printer,
+    openDrawer = true,
+    fullCut = true,
+  } = req.body || {};
+
+  let destination;
+  try {
+    destination = await resolvePrinterDestination("client", printer);
+  } catch (error) {
+    res.status(503).json({
+      ok: false,
+      type: "combined",
+      error: error instanceof Error ? error.message : "No se pudo resolver la impresora",
+    });
+    return;
+  }
+
+  const kitchenLines = getPrintableKitchenLines(kitchenPayload || payload);
+  const clientLines = getPrintableTicketLines(clientPayload || payload, { includeBusinessHeader: true });
+
+  const kitchenBuffer = buildEscPosDocument(kitchenLines, {
+    includeInit: true,
+    openDrawer: false,
+    fullCut,
+  });
+
+  const clientBuffer = buildEscPosDocument(clientLines, {
+    includeInit: false,
+    openDrawer,
+    fullCut,
+  });
+
+  try {
+    const result = await printWithLp({
+      destination,
+      title: "Comanda + Ticket",
+      text: Buffer.concat([kitchenBuffer, clientBuffer]),
+      raw: true,
+    });
+
+    res.json({
+      ok: true,
+      printer: destination,
+      type: "combined",
+      output: result.stdout || "enviado",
+    });
+  } catch (error) {
+    console.error("Error /api/print/combined:", error);
+    res.status(500).json({
+      ok: false,
+      printer: destination,
+      type: "combined",
+      error: error instanceof Error ? error.message : "Error desconocido",
+    });
+  }
+});
+
 app.post("/api/print-ticket", async (req, res) => {
-  const { type = "client", lines, payload = {} } = req.body || {};
-  const destination = type === "kitchen" ? PRINTER_58MM_NAME : PRINTER_80MM_NAME;
+  const { type = "client", lines, payload = {}, printer } = req.body || {};
+
+  let destination;
+  try {
+    destination = await resolvePrinterDestination(type, printer);
+  } catch (error) {
+    res.status(503).json({
+      ok: false,
+      type,
+      error: error instanceof Error ? error.message : "No se pudo resolver la impresora",
+    });
+    return;
+  }
 
   let printableLines = [];
   if (Array.isArray(lines) && lines.length > 0) {
@@ -518,7 +751,9 @@ app.listen(PORT, () => {
   console.log(`http://localhost:${PORT}`);
   console.log(`\nEndpoints disponibles:`);
   console.log(`- http://localhost:${PORT}/api/print/test`);
+  console.log(`- GET http://localhost:${PORT}/api/print/status`);
   console.log(`- POST http://localhost:${PORT}/api/print-ticket`);
+  console.log(`- POST http://localhost:${PORT}/api/print/combined`);
   console.log(`- POST http://localhost:${PORT}/api/print/ticket`);
   console.log(`- POST http://localhost:${PORT}/api/print/ticket/pdf`);
   console.log(`- POST http://localhost:${PORT}/api/print/kitchen`);
