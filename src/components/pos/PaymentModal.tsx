@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Printer, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
 import { useBluetoothPrintApp } from "@/hooks/useBluetoothPrintApp";
 import {
@@ -25,6 +26,7 @@ import {
   type OfflineOrderPayload,
 } from "@/lib/offline-orders";
 import { formatCurrencyMXN } from "@/lib/currency";
+import { generateClientTicketHTML } from "@/lib/printer-formats";
 
 const STANDALONE_EXTRA_PRODUCT_NAMES = new Set([
   "EXTRA SUELTO",
@@ -66,6 +68,11 @@ export function PaymentModal({
   const [isAutoPrinting, setIsAutoPrinting] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [allowManualNameInput, setAllowManualNameInput] = useState(false);
+  const [showPrintDebug, setShowPrintDebug] = useState(false);
+  const [printDebugPayload, setPrintDebugPayload] = useState<{
+    bluetoothJson: string;
+    html: string;
+  } | null>(null);
 
   const printer = useBluetootPrinter();
   const printApp = useBluetoothPrintApp();
@@ -230,6 +237,36 @@ export function PaymentModal({
         createdAt: order.created_at,
       });
       toast.success(`Pedido #${order.order_number} guardado`);
+
+      try {
+        const dateStr = new Date().toLocaleDateString("es-MX", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        const html = generateClientTicketHTML(
+          items,
+          total,
+          order.order_number,
+          normalizedCustomerName,
+          dateStr,
+          getPaymentMethodLabel(paymentMethod)
+        );
+        const bluetoothPayload = printApp.getClientPrintPayload(
+          items,
+          total,
+          order.order_number,
+          normalizedCustomerName
+        );
+        setPrintDebugPayload({
+          bluetoothJson: JSON.stringify(bluetoothPayload, null, 2),
+          html,
+        });
+      } catch (err) {
+        console.error("Error al preparar debug de impresión:", err);
+      }
 
       // Auto-print if enabled (single ticket)
       if (printer.preferences.autoPrint) {
@@ -436,6 +473,29 @@ export function PaymentModal({
                 <Printer className="h-4 w-4" /> Ticket
               </Button>
             </div>
+            {printDebugPayload && (
+              <div className="space-y-2">
+                <Button
+                  variant="ghost"
+                  className="w-full"
+                  onClick={() => setShowPrintDebug((prev) => !prev)}
+                >
+                  {showPrintDebug ? "Ocultar datos de impresión" : "Ver datos de impresión"}
+                </Button>
+                {showPrintDebug && (
+                  <div className="space-y-2">
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Bluetooth JSON</p>
+                      <Textarea value={printDebugPayload.bluetoothJson} readOnly rows={6} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">HTML (PDF)</p>
+                      <Textarea value={printDebugPayload.html} readOnly rows={6} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </DialogContent>

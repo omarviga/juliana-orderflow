@@ -208,6 +208,22 @@ export function useBluetoothPrintApp() {
     [buildClientPrintData, fetchPrintData, sendToPrintApp]
   );
 
+  const getClientPrintPayload = useCallback(
+    (
+      items: CartItem[],
+      total: number,
+      orderNumber: number | null,
+      customerName: string,
+      businessSettings?: {
+        name?: string;
+        subtitle?: string;
+        address?: string;
+        phone?: string;
+      }
+    ) => buildClientPrintData(items, total, orderNumber, customerName, businessSettings),
+    [buildClientPrintData]
+  );
+
   /**
    * Imprime la comanda de cocina
    */
@@ -235,6 +251,12 @@ export function useBluetoothPrintApp() {
     [buildKitchenPrintData, fetchPrintData, sendToPrintApp]
   );
 
+  const getKitchenPrintPayload = useCallback(
+    (items: CartItem[], orderNumber: number | null, customerName: string) =>
+      buildKitchenPrintData(items, orderNumber, customerName),
+    [buildKitchenPrintData]
+  );
+
   /**
    * Verifica si Bluetooth Print App está disponible
    */
@@ -246,5 +268,7 @@ export function useBluetoothPrintApp() {
     printClientTicket,
     printKitchenOrder,
     isBluetoothPrintAppAvailable,
+    getClientPrintPayload,
+    getKitchenPrintPayload,
   };
 }
