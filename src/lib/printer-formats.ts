@@ -932,7 +932,7 @@ export function generateKitchenOrderEscPos(
 }
 
 
-function htmlToPlainText(htmlContent: string): string {
+export function htmlToPlainText(htmlContent: string): string {
   if (typeof DOMParser !== "undefined") {
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlContent, "text/html");
@@ -950,6 +950,28 @@ function htmlToPlainText(htmlContent: string): string {
     .trim();
 }
 
+
+
+export function printPlainTextViaBrowser(textContent: string, title: string = "Impresión"): void {
+  const escapedText = escapeHtml(textContent);
+  const printableHtml = `
+    <html>
+      <head>
+        <meta charset="UTF-8" />
+        <title>${escapeHtml(title)}</title>
+        <style>
+          body { margin: 0; padding: 8mm; font-family: 'Courier New', monospace; font-size: 12px; color: #111; }
+          pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+        </style>
+      </head>
+      <body>
+        <pre>${escapedText}</pre>
+      </body>
+    </html>
+  `;
+
+  printViaBrowser(printableHtml, title);
+}
 export async function printToCups(
   htmlContent: string,
   printerUrl: string,

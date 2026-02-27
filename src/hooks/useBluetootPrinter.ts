@@ -11,7 +11,8 @@ import {
   printMultipleToDevice,
   printToCups,
   printToDevice,
-  printViaBrowser,
+  htmlToPlainText,
+  printPlainTextViaBrowser,
 } from "@/lib/printer-formats";
 import type { PrinterDevice, PrinterPreferences } from "@/types/printer";
 import type { CartItem } from "@/types/pos";
@@ -503,8 +504,9 @@ export function useBluetootPrinter() {
         }
       }
 
-      printViaBrowser(htmlContent, title);
-      toast.success(`${title} listo para imprimir`);
+      const plainText = htmlToPlainText(htmlContent);
+      printPlainTextViaBrowser(plainText, `${title} (texto)`);
+      toast.success(`${title} listo en texto plano para imprimir`);
     },
     [preferences]
   );
@@ -767,9 +769,9 @@ export function useBluetootPrinter() {
         }
         
         // Final fallback: Browser printing
-        const combinedHtml = `${kitchenHtml}<div style="page-break-after: always;"></div>${clientHtml}`;
-        printViaBrowser(combinedHtml, "Comanda + Ticket");
-        toast.success("Comanda y ticket listos para imprimir");
+        const combinedText = `${htmlToPlainText(kitchenHtml)}\n\n${"=".repeat(32)}\n\n${htmlToPlainText(clientHtml)}`;
+        printPlainTextViaBrowser(combinedText, "Comanda + Ticket (texto)");
+        toast.success("Comanda y ticket listos en texto plano para imprimir");
       };
 
       await enqueuePrintJob(printJob);
