@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Bluetooth, Printer, RefreshCw, TestTube, Trash2 } from "lucide-react";
+import { Bluetooth, Printer, RefreshCw, TestTube, Trash2, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
 import { printToCups, printToDevice, printViaBrowser } from "@/lib/printer-formats";
@@ -36,6 +36,7 @@ export function PrinterConfig() {
     getClientPrinter,
     getKitchenPrinter,
     removePrinter,
+    resetPrinterStorage,
     savePreferences,
   } = useBluetootPrinter();
 
@@ -173,16 +174,30 @@ export function PrinterConfig() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium">Impresoras disponibles</h3>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void scanForPrinters()}
-              disabled={isScanning}
-              className="gap-2"
-            >
-              <RefreshCw className={`h-4 w-4 ${isScanning ? "animate-spin" : ""}`} />
-              {isScanning ? "Escaneando..." : "Escanear"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void scanForPrinters()}
+                disabled={isScanning}
+                className="gap-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${isScanning ? "animate-spin" : ""}`} />
+                {isScanning ? "Escaneando..." : "Escanear"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-2"
+                onClick={() => {
+                  resetPrinterStorage();
+                  toast.success("Configuracion de impresoras reparada");
+                }}
+              >
+                <Wrench className="h-4 w-4" />
+                Reparar
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-2">

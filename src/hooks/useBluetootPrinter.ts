@@ -109,6 +109,7 @@ export function useBluetootPrinter() {
           parsed.kitchenPrinterId || parsed.kitchenPrinter58mm?.address || DEFAULT_PREFERENCES.kitchenPrinterId,
       };
     } catch {
+      localStorage.removeItem(STORAGE_KEY);
       return DEFAULT_PREFERENCES;
     }
   });
@@ -128,6 +129,7 @@ export function useBluetootPrinter() {
       }));
     } catch (error) {
       console.error("Error parsing saved printers:", error);
+      localStorage.removeItem(AVAILABLE_PRINTERS_KEY);
       return [];
     }
   });
@@ -196,6 +198,13 @@ export function useBluetootPrinter() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedPrefs));
   }, []);
 
+  const resetPrinterStorage = useCallback(() => {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(AVAILABLE_PRINTERS_KEY);
+    setPreferences(DEFAULT_PREFERENCES);
+    setAvailablePrinters([]);
+  }, []);
+
   // Escanear impresoras Bluetooth disponibles
   const scanForPrinters = useCallback(async () => {
     if (!navigator.bluetooth) {
@@ -256,67 +265,72 @@ export function useBluetootPrinter() {
   // Asignar tipo a una impresora
   const assignPrinterType = useCallback(
     (printerId: string, type: "80mm" | "58mm" | null) => {
-      setPreferences((prev) => {
-        const updatedPrinters = { ...normalizePrintersMap(prev.printers) };
+      try {
+        setPreferences((prev) => {
+          const updatedPrinters = { ...normalizePrintersMap(prev.printers) };
 
-        // Crear registro si no existe para evitar estados inconsistentes.
-        if (!updatedPrinters[printerId]) {
-          const knownPrinter = availablePrinters.find((p) => p.address === printerId);
+          // Crear registro si no existe para evitar estados inconsistentes.
+          if (!updatedPrinters[printerId]) {
+            const knownPrinter = availablePrinters.find((p) => p.address === printerId);
+            updatedPrinters[printerId] = {
+              id: printerId,
+              address: printerId,
+              name: knownPrinter?.name || "Impresora Bluetooth",
+              type: null,
+              status: "disconnected",
+            };
+          }
+
+          if (type) {
+            Object.keys(updatedPrinters).forEach((key) => {
+              if (updatedPrinters[key]?.type === type) {
+                updatedPrinters[key] = { ...updatedPrinters[key], type: null };
+              }
+            });
+          }
+
           updatedPrinters[printerId] = {
-            id: printerId,
-            address: printerId,
-            name: knownPrinter?.name || "Impresora Bluetooth",
-            type: null,
-            status: "disconnected",
+            ...updatedPrinters[printerId],
+            type,
           };
-        }
 
-        if (type) {
-          Object.keys(updatedPrinters).forEach((key) => {
-            if (updatedPrinters[key]?.type === type) {
-              updatedPrinters[key] = { ...updatedPrinters[key], type: null };
+          const newPrefs: PrinterPreferences = {
+            ...prev,
+            printers: updatedPrinters,
+            clientPrinterId: prev.clientPrinterId,
+            kitchenPrinterId: prev.kitchenPrinterId,
+          };
+
+          if (type === "80mm") {
+            newPrefs.clientPrinterId = printerId;
+          } else if (type === "58mm") {
+            newPrefs.kitchenPrinterId = printerId;
+          } else {
+            if (prev.clientPrinterId === printerId) {
+              newPrefs.clientPrinterId = undefined;
             }
-          });
-        }
-
-        updatedPrinters[printerId] = {
-          ...updatedPrinters[printerId],
-          type,
-        };
-
-        const newPrefs: PrinterPreferences = {
-          ...prev,
-          printers: updatedPrinters,
-          clientPrinterId: prev.clientPrinterId,
-          kitchenPrinterId: prev.kitchenPrinterId,
-        };
-
-        if (type === "80mm") {
-          newPrefs.clientPrinterId = printerId;
-        } else if (type === "58mm") {
-          newPrefs.kitchenPrinterId = printerId;
-        } else {
-          if (prev.clientPrinterId === printerId) {
-            newPrefs.clientPrinterId = undefined;
+            if (prev.kitchenPrinterId === printerId) {
+              newPrefs.kitchenPrinterId = undefined;
+            }
           }
-          if (prev.kitchenPrinterId === printerId) {
-            newPrefs.kitchenPrinterId = undefined;
-          }
-        }
 
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
-        return newPrefs;
-      });
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
+          return newPrefs;
+        });
 
-      setAvailablePrinters((prev) =>
-        prev.map((printer) =>
-          printer.id === printerId
-            ? { ...printer, type }
-            : type && printer.type === type
-              ? { ...printer, type: null }
-              : printer
-        )
-      );
+        setAvailablePrinters((prev) =>
+          prev.map((printer) =>
+            printer.id === printerId
+              ? { ...printer, type }
+              : type && printer.type === type
+                ? { ...printer, type: null }
+                : printer
+          )
+        );
+      } catch (error) {
+        console.error("Error al asignar tipo de impresora:", error);
+        toast.error("Error al asignar impresora. Repara la configuración e intenta de nuevo.");
+      }
     },
     [availablePrinters]
   );
@@ -702,6 +716,7 @@ export function useBluetootPrinter() {
     getClientPrinter,
     getKitchenPrinter,
     removePrinter,
+    resetPrinterStorage,
     pairClientPrinter,
     pairKitchenPrinter,
     unpairClientPrinter,
