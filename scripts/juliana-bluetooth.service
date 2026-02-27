@@ -1,0 +1,16 @@
+[Unit]
+Description=Juliana Bluetooth Printer Connector
+After=bluetooth.service network.target
+Wants=bluetooth.service
+
+[Service]
+Type=oneshot
+User=root
+Environment=APP_DIR=/home/tato/juliana-orderflow
+Environment=IMPRESORA_80MM=AB:0A:FA:8F:3C:AA
+Environment=IMPRESORA_58MM=86:67:7A:A9:3C:5F
+ExecStart=/home/tato/juliana-orderflow/scripts/connect-bluetooth-printers.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

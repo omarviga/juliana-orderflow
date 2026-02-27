@@ -968,6 +968,17 @@ export async function printToCups(
 
   const attempts: Array<() => Promise<void>> = [];
 
+  const uniqueFastUrls = new Set<string>();
+  const ensureFastUrl = (value: string) => {
+    const trimmed = value.trim().replace(/\/$/, "");
+    if (!trimmed) return;
+    if (/\/api\/print-ticket(?:\?|$)/.test(trimmed)) {
+      uniqueFastUrls.add(trimmed);
+      return;
+    }
+    uniqueFastUrls.add(`${trimmed}/api/print-ticket`);
+  };
+
   // 1) Gateway dedicado (el más estable en tablet).
   if (PRINT_GATEWAY_URL) {
     const gatewayUrl = `${PRINT_GATEWAY_URL.replace(/\/$/, "")}/imprimir`;
@@ -993,24 +1004,40 @@ export async function printToCups(
   }
 
   // 2) Endpoint rápido local.
-  const baseFastUrl = /\/api\/print-ticket(?:\?|$)/.test(printerUrl)
-    ? printerUrl
-    : `${printerUrl.replace(/\/$/, "")}/api/print-ticket`;
-  attempts.push(async () => {
-    await tryRequest(
-      baseFastUrl,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+  ensureFastUrl(printerUrl);
+
+  // Compatibilidad: si envían URL de CUPS (puerto 631), intentar automáticamente el bridge local (3001).
+  try {
+    const parsed = new URL(printerUrl);
+    if (parsed.port === "631") {
+      const bridge = new URL(parsed.toString());
+      bridge.port = "3001";
+      bridge.pathname = "/";
+      bridge.search = "";
+      bridge.hash = "";
+      ensureFastUrl(bridge.toString());
+    }
+  } catch {
+    // Ignorar URLs inválidas; los intentos existentes reportarán error claro.
+  }
+
+  Array.from(uniqueFastUrls).forEach((fastUrl) => {
+    attempts.push(async () => {
+      await tryRequest(
+        fastUrl,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            type: printerSize === "58mm" ? "kitchen" : "client",
+            lines,
+          }),
         },
-        body: JSON.stringify({
-          type: printerSize === "58mm" ? "kitchen" : "client",
-          lines,
-        }),
-      },
-      "API rápida"
-    );
+        "API rápida"
+      );
+    });
   });
 
   // 3) URL original (compatibilidad).

@@ -22,6 +22,7 @@ const DEFAULT_BUSINESS_ADDRESS =
   "AV. MIGUEL HIDALGO #276, CENTRO, ACÁMBARO. GTO.";
 const DEFAULT_BUSINESS_PHONE = "TEL | WHATSAPP:  417 206 9111";
 const PRINTER_80MM_NAME = process.env.PRINTER_80MM_NAME || "GLPrinter_80mm";
+const PRINTER_58MM_NAME = process.env.PRINTER_58MM_NAME || PRINTER_80MM_NAME;
 const LP_TIMEOUT_MS = Number(process.env.LP_TIMEOUT_MS || 12000);
 
 app.use(cors());
@@ -298,6 +299,7 @@ app.get("/", (req, res) => {
 // }
 app.post("/api/print-ticket", async (req, res) => {
   const { type = "client", lines, payload = {} } = req.body || {};
+  const destination = type === "kitchen" ? PRINTER_58MM_NAME : PRINTER_80MM_NAME;
 
   let printableLines = [];
   if (Array.isArray(lines) && lines.length > 0) {
@@ -313,14 +315,14 @@ app.post("/api/print-ticket", async (req, res) => {
 
   try {
     const result = await printWithLp({
-      destination: PRINTER_80MM_NAME,
+      destination,
       title,
       text,
     });
 
     res.json({
       ok: true,
-      printer: PRINTER_80MM_NAME,
+      printer: destination,
       type,
       output: result.stdout || "enviado",
     });
@@ -328,7 +330,7 @@ app.post("/api/print-ticket", async (req, res) => {
     console.error("Error /api/print-ticket:", error);
     res.status(500).json({
       ok: false,
-      printer: PRINTER_80MM_NAME,
+      printer: destination,
       error: error instanceof Error ? error.message : "Error desconocido",
     });
   }

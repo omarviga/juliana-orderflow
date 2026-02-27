@@ -20,6 +20,7 @@ import type { CashRegisterSale } from "@/lib/cash-register";
 const STORAGE_KEY = "printerPreferences";
 const AVAILABLE_PRINTERS_KEY = "availablePrinters";
 const CUPS_PRINTER_URL = import.meta.env.VITE_CUPS_PRINTER_URL?.trim();
+const REQUIRE_SERVER_PRINT = import.meta.env.VITE_REQUIRE_SERVER_PRINT === "true";
 const FIXED_CLIENT_PRINTER_ID = "GLPrinter_80mm";
 const FIXED_KITCHEN_PRINTER_ID = "GLPrinter_80mm";
 const FIXED_CLIENT_PRINTER: PrinterDevice = {
@@ -42,10 +43,20 @@ const DEFAULT_PREFERENCES: PrinterPreferences = {
   kitchenPrinterId: FIXED_KITCHEN_PRINTER_ID,
   autoPrint: true,
   useBluetoothIfAvailable: false,
-  fallbackToWeb: true,
+  fallbackToWeb: REQUIRE_SERVER_PRINT ? false : true,
   openDrawerOn80mm: true,
   fullCutOn80mm: true,
 };
+
+function enforceServerOnlyPreferences(prefs: PrinterPreferences): PrinterPreferences {
+  if (!REQUIRE_SERVER_PRINT) return prefs;
+  return {
+    ...prefs,
+    autoPrint: true,
+    useBluetoothIfAvailable: false,
+    fallbackToWeb: false,
+  };
+}
 
 function normalizePrinter(
   value: unknown,
@@ -88,7 +99,7 @@ function normalizePrintersMap(input: unknown): Record<string, PrinterDevice> {
 export function useBluetootPrinter() {
   const [preferences, setPreferences] = useState<PrinterPreferences>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return DEFAULT_PREFERENCES;
+    if (!stored) return enforceServerOnlyPreferences(DEFAULT_PREFERENCES);
 
     try {
       const parsed = JSON.parse(stored) as Partial<PrinterPreferences> & {
@@ -117,7 +128,7 @@ export function useBluetootPrinter() {
         };
       }
 
-      return {
+      return enforceServerOnlyPreferences({
         ...DEFAULT_PREFERENCES,
         ...parsed,
         printers: migratedPrinters,
@@ -125,10 +136,10 @@ export function useBluetootPrinter() {
           parsed.clientPrinterId || parsed.clientPrinter80mm?.address || DEFAULT_PREFERENCES.clientPrinterId,
         kitchenPrinterId:
           parsed.kitchenPrinterId || parsed.kitchenPrinter58mm?.address || DEFAULT_PREFERENCES.kitchenPrinterId,
-      };
+      });
     } catch {
       localStorage.removeItem(STORAGE_KEY);
-      return DEFAULT_PREFERENCES;
+      return enforceServerOnlyPreferences(DEFAULT_PREFERENCES);
     }
   });
 
@@ -207,11 +218,12 @@ export function useBluetootPrinter() {
 
   // Guardar preferencias
   const savePreferences = useCallback((prefs: PrinterPreferences) => {
-    const normalizedPrefs: PrinterPreferences = {
+    const normalizedPrefsBase: PrinterPreferences = {
       ...DEFAULT_PREFERENCES,
       ...prefs,
       printers: normalizePrintersMap(prefs.printers),
     };
+    const normalizedPrefs = enforceServerOnlyPreferences(normalizedPrefsBase);
     setPreferences(normalizedPrefs);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedPrefs));
   }, []);

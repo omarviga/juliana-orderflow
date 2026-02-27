@@ -131,3 +131,41 @@ Si tienes problemas con la impresión:
 2. Revisa la consola del navegador (F12) para errores
 3. Prueba con impresión manual desde el navegador
 4. Desempareја y vuelve a emparejar si persiste el error
+
+## Linux + CUPS (auto conexión en servidor)
+
+Si usas un servidor Linux con CUPS y `printer-server.js`, puedes conectar las
+impresoras Bluetooth automáticamente al arrancar:
+
+1. Dar permisos al script:
+   - `chmod +x /home/tato/juliana-orderflow/scripts/connect-bluetooth-printers.sh`
+2. Instalar servicio `systemd`:
+   - `sudo cp /home/tato/juliana-orderflow/scripts/juliana-bluetooth.service /etc/systemd/system/`
+   - `sudo systemctl daemon-reload`
+   - `sudo systemctl enable juliana-bluetooth.service`
+   - `sudo systemctl start juliana-bluetooth.service`
+3. Verificar estado:
+   - `sudo systemctl status juliana-bluetooth.service`
+   - `tail -f /home/tato/juliana-orderflow/logs/bluetooth.log`
+
+Notas:
+- Puedes cambiar MACs editando variables `IMPRESORA_80MM` y `IMPRESORA_58MM` en
+  `scripts/juliana-bluetooth.service`.
+- El script crea `/dev/rfcomm0` para 80mm y `/dev/rfcomm1` para 58mm.
+- Para forzar impresión solo automática por servidor (sin diálogo del navegador),
+  define en el frontend: `VITE_REQUIRE_SERVER_PRINT=true`.
+
+### Servicio de `printer-server.js` al arranque
+
+1. Instalar servicio:
+   - `sudo cp /home/tato/juliana-orderflow/scripts/juliana-printer-server.service /etc/systemd/system/`
+2. (Opcional) Configurar variables sin editar el `.service`:
+   - `sudo cp /home/tato/juliana-orderflow/scripts/juliana-printer-server.env.example /etc/default/juliana-printer-server`
+   - Editar `PRINTER_80MM_NAME` y `PRINTER_58MM_NAME` con `lpstat -p`
+3. Habilitar y arrancar:
+   - `sudo systemctl daemon-reload`
+   - `sudo systemctl enable juliana-printer-server.service`
+   - `sudo systemctl start juliana-printer-server.service`
+4. Verificar:
+   - `sudo systemctl status juliana-printer-server.service`
+   - `journalctl -u juliana-printer-server.service -f`
