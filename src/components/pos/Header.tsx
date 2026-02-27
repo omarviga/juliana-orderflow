@@ -1,6 +1,5 @@
 import { Home, ClipboardList, Settings, LogOut, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PrinterConfig } from "./PrinterConfig";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
@@ -50,7 +49,6 @@ export function Header() {
           </Button>
         ))}
         <div className="ml-3 flex items-center gap-2">
-          <PrinterConfig />
           <span className="rounded-md bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
             {user?.email || "Operador"}
           </span>

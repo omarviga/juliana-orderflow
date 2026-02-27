@@ -18,12 +18,28 @@ import type { CashRegisterSale } from "@/lib/cash-register";
 const STORAGE_KEY = "printerPreferences";
 const AVAILABLE_PRINTERS_KEY = "availablePrinters";
 const CUPS_PRINTER_URL = import.meta.env.VITE_CUPS_PRINTER_URL?.trim();
+const FIXED_CLIENT_PRINTER_ID = "GLPrinter_80mm";
+const FIXED_KITCHEN_PRINTER_ID = "GLPrinter_80mm";
+const FIXED_CLIENT_PRINTER: PrinterDevice = {
+  id: FIXED_CLIENT_PRINTER_ID,
+  address: FIXED_CLIENT_PRINTER_ID,
+  name: "GLPrinter_80mm",
+  type: "80mm",
+  status: "connected",
+};
+const FIXED_KITCHEN_PRINTER: PrinterDevice = {
+  id: FIXED_KITCHEN_PRINTER_ID,
+  address: FIXED_KITCHEN_PRINTER_ID,
+  name: "GLPrinter_80mm",
+  type: "80mm",
+  status: "connected",
+};
 const DEFAULT_PREFERENCES: PrinterPreferences = {
   printers: {},
-  clientPrinterId: undefined,
-  kitchenPrinterId: undefined,
+  clientPrinterId: FIXED_CLIENT_PRINTER_ID,
+  kitchenPrinterId: FIXED_KITCHEN_PRINTER_ID,
   autoPrint: true,
-  useBluetoothIfAvailable: true,
+  useBluetoothIfAvailable: false,
   fallbackToWeb: true,
   openDrawerOn80mm: true,
   fullCutOn80mm: true,
@@ -337,16 +353,18 @@ export function useBluetootPrinter() {
 
   // Obtener impresora asignada a cliente (80mm)
   const getClientPrinter = useCallback((): PrinterDevice | undefined => {
-    return preferences.clientPrinterId
-      ? preferences.printers[preferences.clientPrinterId]
-      : undefined;
+    if (preferences.clientPrinterId && preferences.printers[preferences.clientPrinterId]) {
+      return preferences.printers[preferences.clientPrinterId];
+    }
+    return FIXED_CLIENT_PRINTER;
   }, [preferences]);
 
   // Obtener impresora asignada a cocina (58mm)
   const getKitchenPrinter = useCallback((): PrinterDevice | undefined => {
-    return preferences.kitchenPrinterId
-      ? preferences.printers[preferences.kitchenPrinterId]
-      : undefined;
+    if (preferences.kitchenPrinterId && preferences.printers[preferences.kitchenPrinterId]) {
+      return preferences.printers[preferences.kitchenPrinterId];
+    }
+    return FIXED_KITCHEN_PRINTER;
   }, [preferences]);
 
   // Eliminar impresora
@@ -565,7 +583,7 @@ export function useBluetootPrinter() {
           await printWithPreferences(
             htmlContent,
             "Comanda Cocina",
-            "58mm",
+            "80mm",
             getKitchenPrinter()
           );
         } catch (error) {
@@ -599,6 +617,21 @@ export function useBluetootPrinter() {
           dateStr,
           paymentMethodLabel
         );
+
+        if (CUPS_PRINTER_URL) {
+          try {
+            await printToCups(kitchenHtml, CUPS_PRINTER_URL, "80mm");
+            await printToCups(clientHtml, CUPS_PRINTER_URL, "80mm");
+            toast.success("Comanda y ticket enviados por CUPS");
+            return;
+          } catch (error) {
+            console.error("Error al imprimir trabajo combinado por CUPS:", error);
+            if (!preferences.fallbackToWeb) {
+              throw error;
+            }
+            toast.warning("CUPS falló. Usando impresión por navegador.");
+          }
+        }
 
         if (preferences.useBluetoothIfAvailable) {
           const printer80 = getClientPrinter();

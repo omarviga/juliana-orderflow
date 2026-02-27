@@ -34,10 +34,6 @@ export default function SettingsPage() {
   const queryClient = useQueryClient();
   const {
     preferences,
-    pairClientPrinter,
-    pairKitchenPrinter,
-    unpairClientPrinter,
-    unpairKitchenPrinter,
     savePreferences,
   } = useBluetootPrinter();
 
@@ -803,7 +799,6 @@ export default function SettingsPage() {
 
           {/* TAB: Printers */}
           <TabsContent value="printers" className="space-y-6">
-            {/* Printer 80mm */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -811,91 +806,36 @@ export default function SettingsPage() {
                   Impresora Cliente (80mm)
                 </CardTitle>
                 <CardDescription>
-                  Para imprimir tickets de cliente
+                  Configuración fija del sistema
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {preferences.clientPrinter80mm ? (
-                  <div className="rounded-lg bg-green-50 p-4 dark:bg-green-900/10">
-                    <p className="mb-2 text-sm font-medium text-green-900 dark:text-green-400">
-                      ✓ Conectada
-                    </p>
-                    <p className="mb-4 text-sm text-green-800 dark:text-green-300">
-                      {preferences.clientPrinter80mm.name}
-                    </p>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={unpairClientPrinter}
-                      className="gap-2"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Desemparejar
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border-2 border-dashed border-muted p-4">
-                    <p className="mb-4 text-sm text-muted-foreground">
-                      No hay impresora emparejada
-                    </p>
-                    <Button
-                      variant="outline"
-                      onClick={pairClientPrinter}
-                      className="gap-2"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Emparejar Impresora
-                    </Button>
-                  </div>
-                )}
+                <div className="rounded-lg bg-green-50 p-4 dark:bg-green-900/10">
+                  <p className="mb-2 text-sm font-medium text-green-900 dark:text-green-400">
+                    ✓ Fija
+                  </p>
+                  <p className="text-sm text-green-800 dark:text-green-300">GLPrinter_80mm</p>
+                </div>
               </CardContent>
             </Card>
 
-            {/* Printer 58mm */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Bluetooth className="h-5 w-5" />
-                  Impresora Cocina (58mm)
+                  Impresora Cocina
                 </CardTitle>
                 <CardDescription>
-                  Para imprimir comandas de cocina
+                  Usa la misma impresora fija del sistema (80mm)
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {preferences.kitchenPrinter58mm ? (
-                  <div className="rounded-lg bg-green-50 p-4 dark:bg-green-900/10">
-                    <p className="mb-2 text-sm font-medium text-green-900 dark:text-green-400">
-                      ✓ Conectada
-                    </p>
-                    <p className="mb-4 text-sm text-green-800 dark:text-green-300">
-                      {preferences.kitchenPrinter58mm.name}
-                    </p>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={unpairKitchenPrinter}
-                      className="gap-2"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Desemparejar
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border-2 border-dashed border-muted p-4">
-                    <p className="mb-4 text-sm text-muted-foreground">
-                      No hay impresora emparejada
-                    </p>
-                    <Button
-                      variant="outline"
-                      onClick={pairKitchenPrinter}
-                      className="gap-2"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Emparejar Impresora
-                    </Button>
-                  </div>
-                )}
+                <div className="rounded-lg bg-green-50 p-4 dark:bg-green-900/10">
+                  <p className="mb-2 text-sm font-medium text-green-900 dark:text-green-400">
+                    ✓ Fija
+                  </p>
+                  <p className="text-sm text-green-800 dark:text-green-300">GLPrinter_80mm</p>
+                </div>
               </CardContent>
             </Card>
 
