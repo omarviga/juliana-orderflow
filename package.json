@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "print-gateway": "node print-gateway/server.mjs"
+    "print-android": "node printer-server.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
