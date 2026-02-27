@@ -809,17 +809,29 @@ export async function printToCups(
   printerSize: "80mm" | "58mm" = "80mm"
 ): Promise<void> {
   const payload = htmlToPlainText(htmlContent);
-  const separator = printerUrl.includes("?") ? "&" : "?";
-  const urlWithSize = `${printerUrl}${separator}size=${encodeURIComponent(printerSize)}`;
-
-  const response = await fetch(urlWithSize, {
-    method: "POST",
-    headers: {
-      "Content-Type": "text/plain",
-      "X-Printer-Size": printerSize,
-    },
-    body: payload,
-  });
+  const isFastEndpoint = /\/api\/print-ticket(?:\?|$)/.test(printerUrl);
+  const response = await fetch(
+    isFastEndpoint
+      ? printerUrl
+      : `${printerUrl}${printerUrl.includes("?") ? "&" : "?"}size=${encodeURIComponent(printerSize)}`,
+    {
+      method: "POST",
+      headers: isFastEndpoint
+        ? {
+            "Content-Type": "application/json",
+          }
+        : {
+            "Content-Type": "text/plain",
+            "X-Printer-Size": printerSize,
+          },
+      body: isFastEndpoint
+        ? JSON.stringify({
+            type: printerSize === "58mm" ? "kitchen" : "client",
+            lines: payload.split("\n").filter((line) => line.trim().length > 0),
+          })
+        : payload,
+    }
+  );
 
   if (!response.ok) {
     throw new Error(`CUPS respondió ${response.status}`);

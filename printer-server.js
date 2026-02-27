@@ -11,6 +11,7 @@
 
 const express = require("express");
 const cors = require("cors");
+const { spawn } = require("child_process");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -20,9 +21,57 @@ const DEFAULT_BUSINESS_SUBTITLE = "BARRA COTIDIANA";
 const DEFAULT_BUSINESS_ADDRESS =
   "AV. MIGUEL HIDALGO #276, CENTRO, ACÁMBARO. GTO.";
 const DEFAULT_BUSINESS_PHONE = "TEL | WHATSAPP:  417 206 9111";
+const PRINTER_80MM_NAME = process.env.PRINTER_80MM_NAME || "GLPrinter_80mm";
+const LP_TIMEOUT_MS = Number(process.env.LP_TIMEOUT_MS || 12000);
 
 app.use(cors());
 app.use(express.json());
+
+function printWithLp({ destination, title, text, timeoutMs = LP_TIMEOUT_MS }) {
+  return new Promise((resolve, reject) => {
+    const args = ["-d", destination, "-t", title];
+    const child = spawn("lp", args, { stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill("SIGKILL");
+      reject(new Error(`Timeout al imprimir (${timeoutMs}ms)`));
+    }, timeoutMs);
+
+    child.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(error);
+    });
+
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
+        return;
+      }
+      reject(new Error(stderr.trim() || `lp terminó con código ${code}`));
+    });
+
+    child.stdin.write(text);
+    child.stdin.end();
+  });
+}
 
 // Tipos para el datos de impresora
 /**
@@ -231,12 +280,58 @@ app.get("/", (req, res) => {
     message: "Servidor de Bluetooth Print funcionando",
     endpoints: {
       test: "GET /api/print/test",
+      quickTicket: "POST /api/print-ticket",
       ticket: "POST /api/print/ticket",
       ticketPdf: "POST /api/print/ticket/pdf",
       kitchen: "POST /api/print/kitchen",
       kitchenPdf: "POST /api/print/kitchen/pdf",
     },
   });
+});
+
+// Endpoint rápido: imprime directo por CUPS/lp a la 80mm
+// Body:
+// {
+//   "type": "client" | "kitchen",
+//   "lines": ["texto 1", "texto 2"], // opcional
+//   "payload": { ... } // opcional, para generar líneas automáticamente
+// }
+app.post("/api/print-ticket", async (req, res) => {
+  const { type = "client", lines, payload = {} } = req.body || {};
+
+  let printableLines = [];
+  if (Array.isArray(lines) && lines.length > 0) {
+    printableLines = lines.map((line) => String(line));
+  } else if (type === "kitchen") {
+    printableLines = getPrintableKitchenLines(payload);
+  } else {
+    printableLines = getPrintableTicketLines(payload, { includeBusinessHeader: true });
+  }
+
+  const text = `${printableLines.join("\n")}\n\n\n`;
+  const title = type === "kitchen" ? "Comanda Cocina" : "Ticket Cliente";
+
+  try {
+    const result = await printWithLp({
+      destination: PRINTER_80MM_NAME,
+      title,
+      text,
+    });
+
+    res.json({
+      ok: true,
+      printer: PRINTER_80MM_NAME,
+      type,
+      output: result.stdout || "enviado",
+    });
+  } catch (error) {
+    console.error("Error /api/print-ticket:", error);
+    res.status(500).json({
+      ok: false,
+      printer: PRINTER_80MM_NAME,
+      error: error instanceof Error ? error.message : "Error desconocido",
+    });
+  }
 });
 
 // Endpoint de prueba simple
@@ -421,6 +516,7 @@ app.listen(PORT, () => {
   console.log(`http://localhost:${PORT}`);
   console.log(`\nEndpoints disponibles:`);
   console.log(`- http://localhost:${PORT}/api/print/test`);
+  console.log(`- POST http://localhost:${PORT}/api/print-ticket`);
   console.log(`- POST http://localhost:${PORT}/api/print/ticket`);
   console.log(`- POST http://localhost:${PORT}/api/print/ticket/pdf`);
   console.log(`- POST http://localhost:${PORT}/api/print/kitchen`);
