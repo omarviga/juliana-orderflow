@@ -18,8 +18,11 @@ import type { CashRegisterSale } from "@/lib/cash-register";
 
 const STORAGE_KEY = "printerPreferences";
 const AVAILABLE_PRINTERS_KEY = "availablePrinters";
-const GATEWAY_URL = import.meta.env.VITE_PRINT_GATEWAY_URL?.trim() || "http://localhost:3020";
+const GATEWAY_URL = import.meta.env.VITE_PRINT_GATEWAY_URL?.trim() || "http://192.168.1.96:3020";
 const GATEWAY_TOKEN = import.meta.env.VITE_PRINT_GATEWAY_TOKEN?.trim() || "";
+const isProduction =
+  typeof window !== "undefined" && window.location.hostname.includes("vercel.app");
+const baseUrl = isProduction ? "/api/print" : `${GATEWAY_URL}/api/print`;
 const REQUIRE_SERVER_PRINT = import.meta.env.VITE_REQUIRE_SERVER_PRINT === "true";
 const FIXED_CLIENT_PRINTER_ID = "GLPrinter";
 const FIXED_KITCHEN_PRINTER_ID = "GLPrinter";
@@ -107,15 +110,13 @@ function normalizeAssignedPrinterId(value: unknown, fallbackId: string): string 
 // NUEVA FUNCIÓN: Imprimir usando el gateway
 async function printViaGateway(
   type: 'ticket' | 'kitchen' | 'cash-cut',
-  data: any,
-  printerSize?: string
+  data: any
 ) {
-  if (!GATEWAY_URL) throw new Error("GATEWAY_URL no configurada");
   if (!GATEWAY_TOKEN) throw new Error("GATEWAY_TOKEN no configurado");
 
-  console.log(`📤 Enviando a gateway (${type}):`, { url: GATEWAY_URL, token: GATEWAY_TOKEN.substring(0, 10) + '...' });
+  console.log(`📤 Enviando a gateway (${type}):`, { url: baseUrl, token: GATEWAY_TOKEN.substring(0, 10) + '...' });
 
-  const response = await fetch(`${GATEWAY_URL}/api/print/${type}`, {
+  const response = await fetch(`${baseUrl}/${type}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
