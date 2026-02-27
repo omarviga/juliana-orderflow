@@ -208,55 +208,72 @@ export function useBluetootPrinter() {
   }, [preferences, savePreferences]);
 
   // Asignar tipo a una impresora
-  const assignPrinterType = useCallback((printerId: string, type: "80mm" | "58mm" | null) => {
-    setPreferences((prev) => {
-      const updatedPrinters = { ...prev.printers };
+  const assignPrinterType = useCallback(
+    (printerId: string, type: "80mm" | "58mm" | null) => {
+      setPreferences((prev) => {
+        const updatedPrinters = { ...prev.printers };
 
-      if (type) {
-        Object.keys(updatedPrinters).forEach((key) => {
-          if (updatedPrinters[key].type === type) {
-            updatedPrinters[key] = { ...updatedPrinters[key], type: null };
-          }
-        });
-      }
+        // Crear registro si no existe para evitar estados inconsistentes.
+        if (!updatedPrinters[printerId]) {
+          const knownPrinter = availablePrinters.find((p) => p.address === printerId);
+          updatedPrinters[printerId] = {
+            id: printerId,
+            address: printerId,
+            name: knownPrinter?.name || "Impresora Bluetooth",
+            type: null,
+            status: "disconnected",
+          };
+        }
 
-      if (updatedPrinters[printerId]) {
+        if (type) {
+          Object.keys(updatedPrinters).forEach((key) => {
+            if (updatedPrinters[key]?.type === type) {
+              updatedPrinters[key] = { ...updatedPrinters[key], type: null };
+            }
+          });
+        }
+
         updatedPrinters[printerId] = {
           ...updatedPrinters[printerId],
           type,
         };
-      }
 
-      const newPrefs: PrinterPreferences = {
-        ...prev,
-        printers: updatedPrinters,
-        clientPrinterId: prev.clientPrinterId,
-        kitchenPrinterId: prev.kitchenPrinterId,
-      };
+        const newPrefs: PrinterPreferences = {
+          ...prev,
+          printers: updatedPrinters,
+          clientPrinterId: prev.clientPrinterId,
+          kitchenPrinterId: prev.kitchenPrinterId,
+        };
 
-      if (type === "80mm") {
-        newPrefs.clientPrinterId = printerId;
-      } else if (type === "58mm") {
-        newPrefs.kitchenPrinterId = printerId;
-      } else {
-        if (prev.clientPrinterId === printerId) {
-          newPrefs.clientPrinterId = undefined;
+        if (type === "80mm") {
+          newPrefs.clientPrinterId = printerId;
+        } else if (type === "58mm") {
+          newPrefs.kitchenPrinterId = printerId;
+        } else {
+          if (prev.clientPrinterId === printerId) {
+            newPrefs.clientPrinterId = undefined;
+          }
+          if (prev.kitchenPrinterId === printerId) {
+            newPrefs.kitchenPrinterId = undefined;
+          }
         }
-        if (prev.kitchenPrinterId === printerId) {
-          newPrefs.kitchenPrinterId = undefined;
-        }
-      }
 
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
-      return newPrefs;
-    });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
+        return newPrefs;
+      });
 
-    setAvailablePrinters((prev) =>
-      prev.map((printer) =>
-        printer.id === printerId ? { ...printer, type } : type && printer.type === type ? { ...printer, type: null } : printer
-      )
-    );
-  }, []);
+      setAvailablePrinters((prev) =>
+        prev.map((printer) =>
+          printer.id === printerId
+            ? { ...printer, type }
+            : type && printer.type === type
+              ? { ...printer, type: null }
+              : printer
+        )
+      );
+    },
+    [availablePrinters]
+  );
 
   // Obtener impresora asignada a cliente (80mm)
   const getClientPrinter = useCallback((): PrinterDevice | undefined => {
