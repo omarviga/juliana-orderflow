@@ -51,6 +51,9 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrencyMXN } from "@/lib/currency";
 
+const DRAWER_GATEWAY_URL = import.meta.env.VITE_PRINT_GATEWAY_URL?.trim();
+const DRAWER_GATEWAY_TOKEN = import.meta.env.VITE_PRINT_GATEWAY_TOKEN?.trim();
+
 const CASH_DENOMINATIONS = [
   { key: "1000", label: "Billete $1000", value: 1000 },
   { key: "500", label: "Billete $500", value: 500 },
@@ -100,6 +103,7 @@ export default function OrdersPage() {
   const [openingNote, setOpeningNote] = useState("");
   const [movementAmount, setMovementAmount] = useState("");
   const [movementReason, setMovementReason] = useState("");
+  const [isOpeningDrawer, setIsOpeningDrawer] = useState(false);
   const printer = useBluetootPrinter();
 
   useEffect(() => {
@@ -359,6 +363,73 @@ export default function OrdersPage() {
     );
   };
 
+  const handleOpenDrawer = async () => {
+    if (!DRAWER_GATEWAY_URL || !DRAWER_GATEWAY_TOKEN) {
+      toast.error("Falta configurar gateway/token para apertura de caja.");
+      return;
+    }
+
+    setIsOpeningDrawer(true);
+    try {
+      const baseUrl = DRAWER_GATEWAY_URL.replace(/\/$/, "");
+      const endpoints = [
+        `${baseUrl}/api/drawer/open`,
+        `${baseUrl}/drawer/open`,
+        `${baseUrl}/api/open-drawer`,
+        `${baseUrl}/api/cash-drawer/open`,
+        `${baseUrl}/api/caja/abrir`,
+      ];
+      const payloads = [
+        { printer: "80mm" },
+        { printerId: "GLPrinter_80mm" },
+        { drawer: true },
+        { openDrawer: true },
+      ];
+      const headersVariants: Record<string, string>[] = [
+        { "Content-Type": "application/json", "x-print-token": DRAWER_GATEWAY_TOKEN },
+        { "Content-Type": "application/json", Authorization: DRAWER_GATEWAY_TOKEN },
+        { "Content-Type": "application/json", Authorization: `Bearer ${DRAWER_GATEWAY_TOKEN}` },
+        { "Content-Type": "application/json", "x-api-key": DRAWER_GATEWAY_TOKEN },
+      ];
+
+      let opened = false;
+      const errors: string[] = [];
+      for (const endpoint of endpoints) {
+        for (const headers of headersVariants) {
+          for (const payload of payloads) {
+            try {
+              const response = await fetch(endpoint, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(payload),
+              });
+              if (response.ok) {
+                opened = true;
+                break;
+              }
+              errors.push(`${endpoint} -> ${response.status}`);
+            } catch {
+              errors.push(`${endpoint} -> network_error`);
+            }
+          }
+          if (opened) break;
+        }
+        if (opened) break;
+      }
+
+      if (!opened) {
+        throw new Error(errors.slice(0, 4).join(" | "));
+      }
+
+      toast.success("Apertura de caja enviada.");
+    } catch (error) {
+      console.error("Error al abrir caja:", error);
+      toast.error("No se pudo abrir la caja.");
+    } finally {
+      setIsOpeningDrawer(false);
+    }
+  };
+
   const setDenominationCount = (key: string, nextValue: number) => {
     const safeValue = Number.isFinite(nextValue) && nextValue > 0 ? Math.floor(nextValue) : 0;
     setCashCounts((prev) => ({ ...prev, [key]: safeValue }));
@@ -510,6 +581,15 @@ export default function OrdersPage() {
           onClick={() => setCashOpeningOpen(true)}
         >
           Apertura de Caja
+        </Button>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => void handleOpenDrawer()}
+          disabled={isOpeningDrawer}
+        >
+          {isOpeningDrawer ? "Abriendo cajon..." : "Abrir Cajon"}
         </Button>
 
         <Button
