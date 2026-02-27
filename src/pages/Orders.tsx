@@ -368,11 +368,21 @@ export default function OrdersPage() {
       toast.error("Falta configurar gateway/token para apertura de caja.");
       return;
     }
+    if (
+      typeof window !== "undefined" &&
+      window.location.protocol === "https:" &&
+      /^http:\/\//i.test(DRAWER_GATEWAY_URL)
+    ) {
+      toast.error("Bloqueado por navegador: app en HTTPS y gateway en HTTP.");
+      return;
+    }
 
     setIsOpeningDrawer(true);
     try {
       const baseUrl = DRAWER_GATEWAY_URL.replace(/\/$/, "");
       const endpoints = [
+        `${baseUrl}/api/print-ticket`,
+        `${baseUrl}/api/print/ticket`,
         `${baseUrl}/api/drawer/open`,
         `${baseUrl}/drawer/open`,
         `${baseUrl}/api/open-drawer`,
@@ -382,6 +392,7 @@ export default function OrdersPage() {
       const payloads = [
         { printer: "80mm" },
         { printerId: "GLPrinter_80mm" },
+        { type: "client", paperSize: "80mm", openDrawer: true, fullCut: false, lines: ["ABRIR CAJON"] },
         { drawer: true },
         { openDrawer: true },
       ];

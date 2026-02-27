@@ -20,9 +20,7 @@ const STORAGE_KEY = "printerPreferences";
 const AVAILABLE_PRINTERS_KEY = "availablePrinters";
 const GATEWAY_URL = import.meta.env.VITE_PRINT_GATEWAY_URL?.trim() || "http://192.168.1.96:3020";
 const GATEWAY_TOKEN = import.meta.env.VITE_PRINT_GATEWAY_TOKEN?.trim() || "";
-const isProduction =
-  typeof window !== "undefined" && window.location.hostname.includes("vercel.app");
-const baseUrl = isProduction ? "/api/print" : `${GATEWAY_URL}/api/print`;
+const baseUrl = `${GATEWAY_URL.replace(/\/$/, "")}/api/print`;
 const REQUIRE_SERVER_PRINT = import.meta.env.VITE_REQUIRE_SERVER_PRINT === "true";
 const FIXED_CLIENT_PRINTER_ID = "GLPrinter";
 const FIXED_KITCHEN_PRINTER_ID = "GLPrinter";
@@ -113,6 +111,15 @@ async function printViaGateway(
   data: any
 ) {
   if (!GATEWAY_TOKEN) throw new Error("GATEWAY_TOKEN no configurado");
+  if (
+    typeof window !== "undefined" &&
+    window.location.protocol === "https:" &&
+    /^http:\/\//i.test(baseUrl)
+  ) {
+    throw new Error(
+      "Bloqueado por navegador: la app está en HTTPS y el gateway en HTTP. Usa un gateway HTTPS."
+    );
+  }
 
   console.log(`📤 Enviando a gateway (${type}):`, { url: baseUrl, token: GATEWAY_TOKEN.substring(0, 10) + '...' });
 

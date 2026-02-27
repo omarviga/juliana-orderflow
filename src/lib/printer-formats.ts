@@ -968,6 +968,8 @@ export async function printToCups(
   const payload = htmlToPlainText(htmlContent);
   const lines = payload.split("\n").filter((line) => line.trim().length > 0);
   const errors: string[] = [];
+  const disallowInsecureHttp =
+    typeof window !== "undefined" && window.location.protocol === "https:";
   let fallbackIp: string | undefined;
   let fallbackPort: number | undefined;
 
@@ -992,6 +994,7 @@ export async function printToCups(
   const ensureFastUrl = (value: string) => {
     const trimmed = value.trim().replace(/\/$/, "");
     if (!trimmed) return;
+    if (disallowInsecureHttp && /^http:\/\//i.test(trimmed)) return;
     if (/\/api\/print-ticket(?:\?|$)/.test(trimmed)) {
       uniqueFastUrls.add(trimmed);
       return;
@@ -1005,6 +1008,7 @@ export async function printToCups(
     const gatewayCandidates = new Set<string>();
     const pushGatewayCandidate = (value: string) => {
       const trimmed = value.trim().replace(/\/$/, "");
+      if (disallowInsecureHttp && /^http:\/\//i.test(trimmed)) return;
       if (trimmed) gatewayCandidates.add(trimmed);
     };
     const hasExplicitPath = /^https?:\/\/[^/]+\/.+/i.test(baseGateway);
@@ -1103,20 +1107,22 @@ export async function printToCups(
   const originalUrl = /\/api\/print-ticket(?:\?|$)/.test(printerUrl)
     ? `${printerUrl}${printerUrl.includes("?") ? "&" : "?"}size=${encodeURIComponent(printerSize)}`
     : `${printerUrl}${printerUrl.includes("?") ? "&" : "?"}size=${encodeURIComponent(printerSize)}`;
-  attempts.push(async () => {
-    await tryRequest(
-      originalUrl,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "text/plain",
-          "X-Printer-Size": printerSize,
+  if (!(disallowInsecureHttp && /^http:\/\//i.test(originalUrl))) {
+    attempts.push(async () => {
+      await tryRequest(
+        originalUrl,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "text/plain",
+            "X-Printer-Size": printerSize,
+          },
+          body: payload,
         },
-        body: payload,
-      },
-      "Endpoint original"
-    );
-  });
+        "Endpoint original"
+      );
+    });
+  }
 
   for (const attempt of attempts) {
     try {
@@ -1125,6 +1131,12 @@ export async function printToCups(
     } catch (error) {
       errors.push(error instanceof Error ? error.message : "Error desconocido");
     }
+  }
+
+  if (attempts.length === 0 && disallowInsecureHttp) {
+    throw new Error(
+      "Bloqueado por navegador: app en HTTPS y endpoints de impresión en HTTP. Usa gateway HTTPS."
+    );
   }
 
   throw new Error(`No se pudo imprimir. Intentos: ${errors.join(" | ")}`);
