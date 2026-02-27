@@ -601,7 +601,8 @@ export async function printToDevice(
 export async function printMultipleToDevice(
   deviceAddress: string,
   jobs: Array<{
-    htmlContent: string;
+    htmlContent?: string;
+    escPosCommands?: number[];
     printerSize: "80mm" | "58mm";
     options?: {
       openDrawer?: boolean;
@@ -674,11 +675,17 @@ export async function printMultipleToDevice(
     }
 
     // Convertir todos los HTML a datos imprimibles en un solo trabajo.
-    const printData = jobs.flatMap((job, index) =>
-      htmlToEscPosCommands(job.htmlContent, job.printerSize, job.options, {
-        includeInit: index === 0,
-      })
-    );
+    const printData = jobs.flatMap((job, index) => {
+      if (job.escPosCommands) {
+        return job.escPosCommands;
+      }
+      if (job.htmlContent) {
+        return htmlToEscPosCommands(job.htmlContent, job.printerSize, job.options, {
+          includeInit: index === 0,
+        });
+      }
+      return [];
+    });
 
     console.log("Enviando", printData.length, "bytes a la impresora");
 
@@ -786,6 +793,144 @@ function htmlToEscPosCommands(
 
   return commands;
 }
+
+const textEncoder = new TextEncoder();
+
+const ESC = 0x1b;
+const GS = 0x1d;
+
+const LF = 0x0a;
+const CENTER = [ESC, 0x61, 1];
+const LEFT = [ESC, 0x61, 0];
+const BOLD_ON = [ESC, 0x45, 1];
+const BOLD_OFF = [ESC, 0x45, 0];
+const FONT_NORMAL = [GS, 0x21, 0];
+const FONT_LARGE = [GS, 0x21, 17]; // 2x height, 2x width
+const RESET = [ESC, 0x40];
+const PARTIAL_CUT = [GS, 0x56, 66, 0];
+const FULL_CUT = [GS, 0x56, 65, 0];
+const OPEN_DRAWER = [ESC, 0x70, 0, 25, 250];
+
+function encode(text: string): number[] {
+  return Array.from(textEncoder.encode(normalizeText(text) + "\n"));
+}
+
+export function generateClientTicketEscPos(
+  items: CartItem[],
+  total: number,
+  orderNumber: number | null,
+  customerName: string,
+  dateStr: string,
+  paymentMethodLabel: string = "Efectivo",
+  options?: { openDrawer?: boolean; fullCut?: boolean }
+): number[] {
+  const config = PRINTER_CONFIGS["80mm"];
+  const separator = "-".repeat(config.charsPerLine) + "\n";
+
+  const commands = [
+    ...RESET,
+    ...CENTER,
+    ...FONT_LARGE,
+    ...BOLD_ON,
+    ...encode("JULIANA"),
+    ...BOLD_OFF,
+    ...FONT_NORMAL,
+    ...encode("BARRA COTIDIANA"),
+    ...encode("AV. MIGUEL HIDALGO #276"),
+    ...encode("Tel: 417 206 0111"),
+    ...encode(separator),
+    ...LEFT,
+    ...BOLD_ON,
+    ...encode(`Pedido: #${orderNumber || "---"}`),
+    ...encode(`Nombre: ${customerName}`),
+    ...BOLD_OFF,
+    ...encode(dateStr),
+    ...encode(`Pago: ${paymentMethodLabel}`),
+    ...encode(separator),
+  ];
+
+  items.forEach((item) => {
+    const itemLine = `${item.quantity}x ${getDisplayProductName(item.product.name)}${item.productSize ? ` (${item.productSize.name})` : ""}`;
+    const priceLine = `$${item.subtotal.toFixed(0)}`;
+    const spaces = Math.max(1, config.charsPerLine - itemLine.length - priceLine.length);
+    const line = itemLine + " ".repeat(spaces) + priceLine;
+    commands.push(...encode(line));
+
+    if (item.customLabel) {
+      commands.push(...encode(`  • ${item.customLabel}`));
+    }
+    if (item.kitchenNote) {
+      commands.push(...encode(`  • Nota: ${item.kitchenNote}`));
+    }
+  });
+
+  commands.push(...encode(separator));
+  commands.push(...CENTER, ...FONT_LARGE, ...BOLD_ON);
+  commands.push(...encode(`TOTAL: $${total.toFixed(0)}`));
+  commands.push(...BOLD_OFF, ...FONT_NORMAL);
+  commands.push(...encode(separator));
+  commands.push(...encode("¡Gracias por tu visita!"));
+  commands.push(...encode("Vuelve pronto"), LF, LF);
+
+  if (options?.openDrawer) commands.push(...OPEN_DRAWER);
+  commands.push(...(options?.fullCut ? FULL_CUT : PARTIAL_CUT));
+
+  return commands;
+}
+
+export function generateKitchenOrderEscPos(
+  items: CartItem[],
+  orderNumber: number | null,
+  customerName: string,
+  dateStr: string,
+  options?: { fullCut?: boolean }
+): number[] {
+  const config = PRINTER_CONFIGS["58mm"];
+  const separator = "=".repeat(config.charsPerLine) + "\n";
+
+  const commands = [
+    ...RESET,
+    ...CENTER,
+    ...FONT_LARGE,
+    ...BOLD_ON,
+    ...encode(`COMANDA #${orderNumber || "---"}`),
+    ...FONT_NORMAL,
+    ...encode(separator),
+    ...LEFT,
+    ...BOLD_ON,
+    ...encode(`CLIENTE: ${customerName.toUpperCase()}`),
+    ...BOLD_OFF,
+    ...encode(`HORA: ${dateStr}`),
+    ...encode(separator),
+  ];
+
+  items.forEach((item) => {
+    commands.push(
+      ...BOLD_ON,
+      ...encode(`${item.quantity}x ${getDisplayProductName(item.product.name)}${item.productSize ? ` (${item.productSize.name})` : ""}`),
+      ...BOLD_OFF
+    );
+
+    const details = [
+      ...(item.customizations || []).map((c) => c.ingredient.name),
+      ...(item.customLabel ? [`📝 ${item.customLabel}`] : []),
+      ...(item.kitchenNote ? [`💬 ${item.kitchenNote}`] : []),
+    ];
+
+    if (details.length > 0) {
+      details.forEach((detail) => commands.push(...encode(`  • ${detail}`)));
+    } else {
+      commands.push(...encode("  (Sin modificaciones)"));
+    }
+    commands.push(LF);
+  });
+
+  commands.push(LF, LF);
+  commands.push(...(options?.fullCut ? FULL_CUT : PARTIAL_CUT));
+
+  return commands;
+}
+
 
 function htmlToPlainText(htmlContent: string): string {
   if (typeof DOMParser !== "undefined") {
