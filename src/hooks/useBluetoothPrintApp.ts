@@ -36,6 +36,75 @@ interface PrinterData {
 export function useBluetoothPrintApp() {
   const canUseSupabaseFunctions = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
+  const buildClientPrintData = useCallback(
+    (
+      items: CartItem[],
+      total: number,
+      orderNumber: number | null,
+      customerName: string,
+      businessSettings?: {
+        name?: string;
+        subtitle?: string;
+        address?: string;
+        phone?: string;
+      }
+    ): PrinterData[] => {
+      const lines: PrinterData[] = [];
+      const push = (content: string, align: 0 | 1 | 2 = 0, bold: 0 | 1 = 0, format: 0 | 1 | 2 | 3 | 4 = 0) =>
+        lines.push({ type: 0, content, align, bold, format });
+
+      const headerName = businessSettings?.name || "JULIANA";
+      const headerSubtitle = businessSettings?.subtitle || "BARRA COTIDIANA";
+      push(headerName, 1, 1, 2);
+      push(headerSubtitle, 1, 1, 0);
+      if (businessSettings?.address) push(businessSettings.address, 1, 0, 4);
+      if (businessSettings?.phone) push(businessSettings.phone, 1, 0, 4);
+      push("--------------------------------", 1);
+      push(`Pedido: #${orderNumber ?? "---"}`, 0);
+      push(`Cliente: ${customerName || "Barra"}`, 0);
+      push("--------------------------------", 0);
+
+      items.forEach((item) => {
+        const name = item.product?.name || "Item";
+        const size = item.productSize?.name ? ` (${item.productSize.name})` : "";
+        push(`${item.quantity}x ${name}${size}`, 0, 1);
+        if (item.customLabel) push(`  - ${item.customLabel}`, 0, 0, 4);
+        push(`   $${(item.subtotal || 0).toFixed(0)}`, 2, 1);
+      });
+
+      push("--------------------------------", 0);
+      push(`TOTAL: $${Number(total || 0).toFixed(0)}`, 2, 1, 1);
+      push("\n\n", 0);
+      return lines;
+    },
+    []
+  );
+
+  const buildKitchenPrintData = useCallback(
+    (items: CartItem[], orderNumber: number | null, customerName: string): PrinterData[] => {
+      const lines: PrinterData[] = [];
+      const push = (content: string, align: 0 | 1 | 2 = 0, bold: 0 | 1 = 0, format: 0 | 1 | 2 | 3 | 4 = 0) =>
+        lines.push({ type: 0, content, align, bold, format });
+
+      push("COMANDA", 1, 1, 2);
+      push(`#${orderNumber ?? "---"}`, 1, 1);
+      push("--------------------------------", 1);
+      push(`Cliente: ${customerName || "Barra"}`, 0, 1);
+      push("--------------------------------", 0);
+
+      items.forEach((item) => {
+        const name = item.product?.name || "Item";
+        const size = item.productSize?.name ? ` (${item.productSize.name})` : "";
+        push(`${item.quantity}x ${name}${size}`.toUpperCase(), 0, 1);
+        if (item.customLabel) push(`  - ${item.customLabel}`, 0, 0, 4);
+      });
+
+      push("\n\n", 0);
+      return lines;
+    },
+    []
+  );
+
   /**
    * Obtiene los datos JSON del servidor de Supabase
    */
@@ -85,7 +154,8 @@ export function useBluetoothPrintApp() {
       }
 
       const jsonString = JSON.stringify(printDataJSON);
-      const schemeUrl = `my.bluetoothprint.scheme://data:application/json,${jsonString}`;
+      const encoded = encodeURIComponent(jsonString);
+      const schemeUrl = `my.bluetoothprint.scheme://data:application/json,${encoded}`;
 
       window.location.href = schemeUrl;
 
@@ -125,15 +195,17 @@ export function useBluetoothPrintApp() {
           businessPhone: businessSettings?.phone,
         });
 
-        if (!printData) return false;
+        const payload =
+          printData ??
+          buildClientPrintData(items, total, orderNumber, customerName, businessSettings);
 
-        return sendToPrintApp(printData);
+        return sendToPrintApp(payload);
       } catch (err) {
         console.error("Error printing client ticket:", err);
         return false;
       }
     },
-    [fetchPrintData, sendToPrintApp]
+    [buildClientPrintData, fetchPrintData, sendToPrintApp]
   );
 
   /**
@@ -152,23 +224,23 @@ export function useBluetoothPrintApp() {
           customerName,
         });
 
-        if (!printData) return false;
+        const payload = printData ?? buildKitchenPrintData(items, orderNumber, customerName);
 
-        return sendToPrintApp(printData);
+        return sendToPrintApp(payload);
       } catch (err) {
         console.error("Error printing kitchen order:", err);
         return false;
       }
     },
-    [fetchPrintData, sendToPrintApp]
+    [buildKitchenPrintData, fetchPrintData, sendToPrintApp]
   );
 
   /**
    * Verifica si Bluetooth Print App está disponible
    */
   const isBluetoothPrintAppAvailable = useCallback((): boolean => {
-    return canUseSupabaseFunctions;
-  }, [canUseSupabaseFunctions]);
+    return typeof window !== "undefined";
+  }, []);
 
   return {
     printClientTicket,
