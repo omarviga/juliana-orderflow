@@ -9,7 +9,6 @@ import {
   generateKitchenOrderHTML,
   generateKitchenOrderEscPos,
   printMultipleToDevice,
-  printToCups,
   printToDevice,
   printViaBrowser,
 } from "@/lib/printer-formats";
@@ -50,37 +49,11 @@ const DEFAULT_PREFERENCES: PrinterPreferences = {
 
 
 
-function getCombinedPrintEndpoints(baseUrl: string): string[] {
+function getCombinedPrintEndpoint(baseUrl: string): string {
   const trimmed = baseUrl.trim().replace(/\/$/, "");
-  if (!trimmed) return [];
-
-  const candidates = new Set<string>();
-  const addCombined = (value: string) => {
-    if (!value) return;
-    if (/\/api\/print\/combined(?:\?|$)/.test(value)) {
-      candidates.add(value);
-      return;
-    }
-    candidates.add(`${value}/api/print/combined`);
-  };
-
-  addCombined(trimmed);
-
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.port === "631") {
-      const bridge = new URL(parsed.toString());
-      bridge.port = "3001";
-      bridge.pathname = "";
-      bridge.search = "";
-      bridge.hash = "";
-      addCombined(bridge.toString().replace(/\/$/, ""));
-    }
-  } catch {
-    // ignore invalid URL
-  }
-
-  return Array.from(candidates);
+  if (!trimmed) return "";
+  if (/\/api\/print\/combined(?:\?|$)/.test(trimmed)) return trimmed;
+  return `${trimmed}/api/print/combined`;
 }
 
 async function printCombinedViaServer(
@@ -96,34 +69,42 @@ async function printCombinedViaServer(
     fullCut: boolean;
   }
 ): Promise<void> {
-  const endpoints = getCombinedPrintEndpoints(printerUrl);
-  const errors: string[] = [];
-
-  for (const endpoint of endpoints) {
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          payload,
-          openDrawer: options.openDrawer,
-          fullCut: options.fullCut,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`${response.status} ${response.statusText}`);
-      }
-
-      return;
-    } catch (error) {
-      errors.push(`${endpoint}: ${error instanceof Error ? error.message : "Error desconocido"}`);
-    }
+  const endpoint = getCombinedPrintEndpoint(printerUrl);
+  if (!endpoint) {
+    throw new Error("No hay endpoint de impresión configurado.");
   }
 
-  throw new Error(`No se pudo imprimir trabajo combinado en servidor. ${errors.join(" | ")}`);
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 2200);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        payload,
+        openDrawer: options.openDrawer,
+        fullCut: options.fullCut,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}`);
+    }
+  } catch (error) {
+    const message =
+      error instanceof DOMException && error.name === "AbortError"
+        ? "Timeout de impresión en servidor"
+        : error instanceof Error
+          ? error.message
+          : "Error desconocido";
+    throw new Error(`No se pudo imprimir trabajo combinado en servidor (${endpoint}): ${message}`);
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 }
 
 function enforceServerOnlyPreferences(prefs: PrinterPreferences): PrinterPreferences {
@@ -837,16 +818,7 @@ export function useBluetootPrinter() {
             return;
           } catch (combinedError) {
             console.error("Error al imprimir trabajo combinado por servidor:", combinedError);
-
-            try {
-              await printToCups(kitchenHtml, CUPS_PRINTER_URL, kitchenPrinter?.type || "58mm");
-              await printToCups(clientHtml, CUPS_PRINTER_URL, clientPrinter?.type || "80mm");
-              toast.success("Comanda y ticket enviados por CUPS");
-              return;
-            } catch (error) {
-              console.error("Error al imprimir trabajo combinado por CUPS:", error);
-              toast.warning("CUPS falló. Usando impresión por navegador.");
-            }
+            toast.warning("Servidor de impresión lento/no disponible. Abriendo vista de impresión.");
           }
         }
         
