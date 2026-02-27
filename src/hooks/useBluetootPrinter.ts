@@ -16,6 +16,7 @@ import type { CartItem } from "@/types/pos";
 import type { CashRegisterSale } from "@/lib/cash-register";
 
 const STORAGE_KEY = "printerPreferences";
+const AVAILABLE_PRINTERS_KEY = "availablePrinters";
 const CUPS_PRINTER_URL = import.meta.env.VITE_CUPS_PRINTER_URL?.trim();
 const DEFAULT_PREFERENCES: PrinterPreferences = {
   printers: {},
@@ -72,10 +73,59 @@ export function useBluetootPrinter() {
     }
   });
 
-  const [availablePrinters, setAvailablePrinters] = useState<PrinterDevice[]>([]);
+  const [availablePrinters, setAvailablePrinters] = useState<PrinterDevice[]>(() => {
+    const saved = localStorage.getItem(AVAILABLE_PRINTERS_KEY);
+    if (!saved) return [];
+
+    try {
+      const parsed = JSON.parse(saved) as Array<Pick<PrinterDevice, "address" | "name">>;
+      return parsed.map((printer) => ({
+        address: printer.address,
+        name: printer.name,
+        id: printer.address,
+        type: preferences.printers[printer.address]?.type ?? null,
+        status: "disconnected",
+      }));
+    } catch (error) {
+      console.error("Error parsing saved printers:", error);
+      return [];
+    }
+  });
   const [isScanning, setIsScanning] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [printQueue, setPrintQueue] = useState<Array<() => Promise<void>>>([]);
+
+  // Sincronizar tipos guardados con la lista visible de impresoras.
+  useEffect(() => {
+    setAvailablePrinters((prev) =>
+      prev.map((printer) => {
+        const savedPrinter = preferences.printers[printer.address];
+        if (!savedPrinter) return { ...printer, type: null };
+        return {
+          ...printer,
+          type: savedPrinter.type ?? null,
+        };
+      })
+    );
+  }, [preferences.printers]);
+
+  // Persistir listado de impresoras para rehidratacion rapida en UI.
+  useEffect(() => {
+    if (availablePrinters.length === 0) {
+      localStorage.removeItem(AVAILABLE_PRINTERS_KEY);
+      return;
+    }
+
+    localStorage.setItem(
+      AVAILABLE_PRINTERS_KEY,
+      JSON.stringify(
+        availablePrinters.map((printer) => ({
+          address: printer.address,
+          name: printer.name,
+        }))
+      )
+    );
+  }, [availablePrinters]);
 
   const enqueuePrintJob = useCallback((job: () => Promise<void>) => {
     return new Promise<void>((resolve, reject) => {
@@ -180,20 +230,32 @@ export function useBluetootPrinter() {
       const newPrefs: PrinterPreferences = {
         ...prev,
         printers: updatedPrinters,
-        clientPrinterId: type === "80mm" ? printerId : prev.clientPrinterId,
-        kitchenPrinterId: type === "58mm" ? printerId : prev.kitchenPrinterId,
+        clientPrinterId: prev.clientPrinterId,
+        kitchenPrinterId: prev.kitchenPrinterId,
       };
 
-      if (type === null && prev.clientPrinterId === printerId) {
-        newPrefs.clientPrinterId = undefined;
-      }
-      if (type === null && prev.kitchenPrinterId === printerId) {
-        newPrefs.kitchenPrinterId = undefined;
+      if (type === "80mm") {
+        newPrefs.clientPrinterId = printerId;
+      } else if (type === "58mm") {
+        newPrefs.kitchenPrinterId = printerId;
+      } else {
+        if (prev.clientPrinterId === printerId) {
+          newPrefs.clientPrinterId = undefined;
+        }
+        if (prev.kitchenPrinterId === printerId) {
+          newPrefs.kitchenPrinterId = undefined;
+        }
       }
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
       return newPrefs;
     });
+
+    setAvailablePrinters((prev) =>
+      prev.map((printer) =>
+        printer.id === printerId ? { ...printer, type } : type && printer.type === type ? { ...printer, type: null } : printer
+      )
+    );
   }, []);
 
   // Obtener impresora asignada a cliente (80mm)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -17,8 +17,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Bluetooth, Printer, RefreshCw, Trash2 } from "lucide-react";
+import { Bluetooth, Printer, RefreshCw, TestTube, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
+import { printToCups, printToDevice, printViaBrowser } from "@/lib/printer-formats";
+import type { PrinterDevice } from "@/types/printer";
+
+const CUPS_PRINTER_URL = import.meta.env.VITE_CUPS_PRINTER_URL?.trim();
 
 export function PrinterConfig() {
   const [open, setOpen] = useState(false);
@@ -77,6 +82,74 @@ export function PrinterConfig() {
       fullCutOn80mm: !preferences.fullCutOn80mm,
     });
   };
+
+  const testPrinter = useCallback(
+    async (printer: PrinterDevice) => {
+      if (!printer.type) {
+        toast.error("Asigna un tipo a la impresora primero");
+        return;
+      }
+
+      const testHtml = `
+        <div style="text-align: center; font-family: monospace;">
+          <h3>PRUEBA DE IMPRESION</h3>
+          <hr />
+          <p><strong>Impresora:</strong> ${printer.name}</p>
+          <p><strong>Tipo:</strong> ${printer.type === "80mm" ? "Cliente (80mm)" : "Cocina (58mm)"}</p>
+          <p><strong>Fecha:</strong> ${new Date().toLocaleString()}</p>
+          <hr />
+          <p>Texto normal</p>
+          <p><strong>Texto en negrita</strong></p>
+          <p style="text-align: right;">Alineado derecha</p>
+          <hr />
+          <p>Prueba enviada</p>
+        </div>
+      `;
+
+      const toastId = toast.loading(`Probando ${printer.name}...`);
+
+      try {
+        if (preferences.useBluetoothIfAvailable) {
+          try {
+            await printToDevice(printer.address, testHtml, printer.type, {
+              openDrawer: printer.type === "80mm" ? preferences.openDrawerOn80mm : false,
+              fullCut: true,
+            });
+            toast.success(`Prueba enviada a ${printer.name}`, { id: toastId });
+            return;
+          } catch (error) {
+            console.error("Error de prueba por Bluetooth:", error);
+            if (!preferences.fallbackToWeb && !CUPS_PRINTER_URL) {
+              throw error;
+            }
+          }
+        }
+
+        if (CUPS_PRINTER_URL) {
+          try {
+            await printToCups(testHtml, CUPS_PRINTER_URL);
+            toast.success(`Prueba enviada a ${printer.name}`, { id: toastId });
+            return;
+          } catch (error) {
+            console.error("Error de prueba por CUPS:", error);
+            if (!preferences.fallbackToWeb) {
+              throw error;
+            }
+          }
+        }
+
+        printViaBrowser(testHtml, `Prueba ${printer.name}`);
+        toast.success(`Prueba enviada a ${printer.name}`, { id: toastId });
+      } catch (error) {
+        console.error("Error en prueba:", error);
+        toast.error(
+          `Error: ${error instanceof Error ? error.message : "Desconocido"}`,
+          { id: toastId }
+        );
+      }
+    },
+    [preferences]
+  );
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -157,6 +230,17 @@ export function PrinterConfig() {
                         <SelectItem value="none">Sin asignar</SelectItem>
                       </SelectContent>
                     </Select>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2"
+                      onClick={() => void testPrinter(printer)}
+                      disabled={!printer.type}
+                      title={!printer.type ? "Asigna un tipo primero" : "Probar impresion"}
+                    >
+                      <TestTube className="h-4 w-4" />
+                    </Button>
 
                     <Button
                       variant="ghost"
