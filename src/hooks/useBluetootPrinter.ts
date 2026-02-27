@@ -29,6 +29,44 @@ const DEFAULT_PREFERENCES: PrinterPreferences = {
   fullCutOn80mm: true,
 };
 
+function normalizePrinter(
+  value: unknown,
+  fallbackId?: string
+): PrinterDevice | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Partial<PrinterDevice> & Record<string, unknown>;
+  const id = typeof raw.id === "string" && raw.id ? raw.id : fallbackId;
+  const address =
+    typeof raw.address === "string" && raw.address
+      ? raw.address
+      : id;
+
+  if (!id || !address) return undefined;
+
+  return {
+    id,
+    address,
+    name: typeof raw.name === "string" && raw.name ? raw.name : "Impresora Bluetooth",
+    type: raw.type === "80mm" || raw.type === "58mm" ? raw.type : null,
+    status:
+      raw.status === "connected" || raw.status === "disconnected" || raw.status === "pairing"
+        ? raw.status
+        : "disconnected",
+    lastUsed: raw.lastUsed instanceof Date ? raw.lastUsed : undefined,
+  };
+}
+
+function normalizePrintersMap(input: unknown): Record<string, PrinterDevice> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
+  const map = input as Record<string, unknown>;
+  const normalized: Record<string, PrinterDevice> = {};
+  Object.entries(map).forEach(([key, value]) => {
+    const printer = normalizePrinter(value, key);
+    if (printer) normalized[printer.id] = printer;
+  });
+  return normalized;
+}
+
 export function useBluetootPrinter() {
   const [preferences, setPreferences] = useState<PrinterPreferences>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -39,23 +77,25 @@ export function useBluetootPrinter() {
         clientPrinter80mm?: PrinterDevice;
         kitchenPrinter58mm?: PrinterDevice;
       };
-      const migratedPrinters = { ...(parsed.printers || {}) };
+      const migratedPrinters = normalizePrintersMap(parsed.printers);
 
       if (parsed.clientPrinter80mm?.address) {
         migratedPrinters[parsed.clientPrinter80mm.address] = {
           id: parsed.clientPrinter80mm.address,
+          address: parsed.clientPrinter80mm.address,
+          name: parsed.clientPrinter80mm.name || "Impresora 80mm",
           type: "80mm",
           status: "disconnected",
-          ...parsed.clientPrinter80mm,
         };
       }
 
       if (parsed.kitchenPrinter58mm?.address) {
         migratedPrinters[parsed.kitchenPrinter58mm.address] = {
           id: parsed.kitchenPrinter58mm.address,
+          address: parsed.kitchenPrinter58mm.address,
+          name: parsed.kitchenPrinter58mm.name || "Impresora 58mm",
           type: "58mm",
           status: "disconnected",
-          ...parsed.kitchenPrinter58mm,
         };
       }
 
@@ -97,9 +137,10 @@ export function useBluetootPrinter() {
 
   // Sincronizar tipos guardados con la lista visible de impresoras.
   useEffect(() => {
+    const printers = normalizePrintersMap(preferences.printers);
     setAvailablePrinters((prev) =>
       prev.map((printer) => {
-        const savedPrinter = preferences.printers[printer.address];
+        const savedPrinter = printers[printer.address];
         if (!savedPrinter) return { ...printer, type: null };
         return {
           ...printer,
@@ -146,8 +187,13 @@ export function useBluetootPrinter() {
 
   // Guardar preferencias
   const savePreferences = useCallback((prefs: PrinterPreferences) => {
-    setPreferences(prefs);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+    const normalizedPrefs: PrinterPreferences = {
+      ...DEFAULT_PREFERENCES,
+      ...prefs,
+      printers: normalizePrintersMap(prefs.printers),
+    };
+    setPreferences(normalizedPrefs);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedPrefs));
   }, []);
 
   // Escanear impresoras Bluetooth disponibles
@@ -211,7 +257,7 @@ export function useBluetootPrinter() {
   const assignPrinterType = useCallback(
     (printerId: string, type: "80mm" | "58mm" | null) => {
       setPreferences((prev) => {
-        const updatedPrinters = { ...prev.printers };
+        const updatedPrinters = { ...normalizePrintersMap(prev.printers) };
 
         // Crear registro si no existe para evitar estados inconsistentes.
         if (!updatedPrinters[printerId]) {
