@@ -9,7 +9,6 @@ import {
   generateKitchenOrderHTML,
   generateKitchenOrderEscPos,
   printMultipleToDevice,
-  printToCups,
   printToDevice,
   printViaBrowser,
 } from "@/lib/printer-formats";
@@ -19,21 +18,23 @@ import type { CashRegisterSale } from "@/lib/cash-register";
 
 const STORAGE_KEY = "printerPreferences";
 const AVAILABLE_PRINTERS_KEY = "availablePrinters";
-const CUPS_PRINTER_URL = import.meta.env.VITE_CUPS_PRINTER_URL?.trim();
+const GATEWAY_URL = import.meta.env.VITE_PRINT_GATEWAY_URL?.trim() || "http://localhost:3020";
+const GATEWAY_TOKEN = import.meta.env.VITE_PRINT_GATEWAY_TOKEN?.trim() || "";
 const REQUIRE_SERVER_PRINT = import.meta.env.VITE_REQUIRE_SERVER_PRINT === "true";
-const FIXED_CLIENT_PRINTER_ID = "GLPrinter_80mm";
-const FIXED_KITCHEN_PRINTER_ID = "GLPrinter_58mm";
+const FIXED_CLIENT_PRINTER_ID = "GLPrinter";
+const FIXED_KITCHEN_PRINTER_ID = "GLPrinter";
+const LEGACY_FIXED_PRINTER_IDS = new Set(["GLPrinter_80mm", "GLPrinter_58mm"]);
 const FIXED_CLIENT_PRINTER: PrinterDevice = {
   id: FIXED_CLIENT_PRINTER_ID,
   address: FIXED_CLIENT_PRINTER_ID,
-  name: "GLPrinter_80mm",
+  name: "GLPrinter",
   type: "80mm",
   status: "connected",
 };
 const FIXED_KITCHEN_PRINTER: PrinterDevice = {
   id: FIXED_KITCHEN_PRINTER_ID,
   address: FIXED_KITCHEN_PRINTER_ID,
-  name: "GLPrinter_58mm",
+  name: "GLPrinter",
   type: "58mm",
   status: "connected",
 };
@@ -96,6 +97,55 @@ function normalizePrintersMap(input: unknown): Record<string, PrinterDevice> {
   return normalized;
 }
 
+function normalizeAssignedPrinterId(value: unknown, fallbackId: string): string {
+  if (typeof value !== "string" || !value.trim()) return fallbackId;
+  const id = value.trim();
+  if (LEGACY_FIXED_PRINTER_IDS.has(id)) return FIXED_CLIENT_PRINTER_ID;
+  return id;
+}
+
+// NUEVA FUNCIÓN: Imprimir usando el gateway
+async function printViaGateway(
+  type: 'ticket' | 'kitchen' | 'cash-cut',
+  data: any,
+  printerSize?: string
+) {
+  if (!GATEWAY_URL) throw new Error("GATEWAY_URL no configurada");
+  if (!GATEWAY_TOKEN) throw new Error("GATEWAY_TOKEN no configurado");
+
+  console.log(`📤 Enviando a gateway (${type}):`, { url: GATEWAY_URL, token: GATEWAY_TOKEN.substring(0, 10) + '...' });
+
+  const response = await fetch(`${GATEWAY_URL}/api/print/${type}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-print-token': GATEWAY_TOKEN, // IMPORTANTE: el gateway usa x-print-token
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gateway error (${response.status}): ${errorText}`);
+  }
+
+  const result = await response.json();
+  console.log("✅ Respuesta del gateway:", result);
+  return result;
+}
+
+// Convertir CartItem[] al formato que espera el gateway
+function mapItemsToGatewayFormat(items: CartItem[]) {
+  return items.map(item => ({
+    quantity: item.quantity,
+    name: item.product?.name || item.name || "Producto",
+    product: { name: item.product?.name || item.name || "Producto" },
+    subtotal: item.subtotal || 0,
+    customLabel: item.customLabel,
+    productSize: item.productSize ? { name: item.productSize.name } : undefined,
+  }));
+}
+
 export function useBluetootPrinter() {
   const [preferences, setPreferences] = useState<PrinterPreferences>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -132,10 +182,14 @@ export function useBluetootPrinter() {
         ...DEFAULT_PREFERENCES,
         ...parsed,
         printers: migratedPrinters,
-        clientPrinterId:
-          parsed.clientPrinterId || parsed.clientPrinter80mm?.address || DEFAULT_PREFERENCES.clientPrinterId,
-        kitchenPrinterId:
-          parsed.kitchenPrinterId || parsed.kitchenPrinter58mm?.address || DEFAULT_PREFERENCES.kitchenPrinterId,
+        clientPrinterId: normalizeAssignedPrinterId(
+          parsed.clientPrinterId || parsed.clientPrinter80mm?.address,
+          DEFAULT_PREFERENCES.clientPrinterId
+        ),
+        kitchenPrinterId: normalizeAssignedPrinterId(
+          parsed.kitchenPrinterId || parsed.kitchenPrinter58mm?.address,
+          DEFAULT_PREFERENCES.kitchenPrinterId
+        ),
       });
     } catch {
       localStorage.removeItem(STORAGE_KEY);
@@ -222,6 +276,14 @@ export function useBluetootPrinter() {
       ...DEFAULT_PREFERENCES,
       ...prefs,
       printers: normalizePrintersMap(prefs.printers),
+      clientPrinterId: normalizeAssignedPrinterId(
+        prefs.clientPrinterId,
+        DEFAULT_PREFERENCES.clientPrinterId
+      ),
+      kitchenPrinterId: normalizeAssignedPrinterId(
+        prefs.kitchenPrinterId,
+        DEFAULT_PREFERENCES.kitchenPrinterId
+      ),
     };
     const normalizedPrefs = enforceServerOnlyPreferences(normalizedPrefsBase);
     setPreferences(normalizedPrefs);
@@ -367,6 +429,9 @@ export function useBluetootPrinter() {
 
   // Obtener impresora asignada a cliente (80mm)
   const getClientPrinter = useCallback((): PrinterDevice | undefined => {
+    if (preferences.clientPrinterId === FIXED_CLIENT_PRINTER_ID) {
+      return FIXED_CLIENT_PRINTER;
+    }
     if (preferences.clientPrinterId && preferences.printers[preferences.clientPrinterId]) {
       return preferences.printers[preferences.clientPrinterId];
     }
@@ -375,6 +440,9 @@ export function useBluetootPrinter() {
 
   // Obtener impresora asignada a cocina (58mm)
   const getKitchenPrinter = useCallback((): PrinterDevice | undefined => {
+    if (preferences.kitchenPrinterId === FIXED_KITCHEN_PRINTER_ID) {
+      return FIXED_KITCHEN_PRINTER;
+    }
     if (preferences.kitchenPrinterId && preferences.printers[preferences.kitchenPrinterId]) {
       return preferences.printers[preferences.kitchenPrinterId];
     }
@@ -452,62 +520,26 @@ export function useBluetootPrinter() {
     };
   }, [printQueue, isPrinting]);
 
-  const printWithPreferences = useCallback(
+  // NUEVA VERSIÓN: Usar el gateway en lugar de CUPS directo
+  const printWithGateway = useCallback(
     async (
-      htmlContent: string,
-      title: string,
-      printerSize: "80mm" | "58mm",
-      preferredPrinter?: PrinterDevice,
-      options?: {
-        openDrawer?: boolean;
-        fullCut?: boolean;
-      }
+      type: 'ticket' | 'kitchen' | 'cash-cut',
+      data: any
     ) => {
-      if (preferences.useBluetoothIfAvailable) {
-        if (!preferredPrinter?.address) {
-          if (!preferences.fallbackToWeb) {
-            throw new Error("No hay impresora Bluetooth emparejada para esta impresión.");
-          }
-        } else {
-          try {
-            await printToDevice(preferredPrinter.address, htmlContent, printerSize, options);
-            toast.success(`${title} enviado a impresora Bluetooth`);
-            return;
-          } catch (error) {
-            console.error(`Error al imprimir ${title} por Bluetooth:`, error);
-            if (!preferences.fallbackToWeb) {
-              throw error;
-            }
-            toast.warning(`Bluetooth falló. Usando impresión por navegador para ${title}.`);
-          }
-        }
+      try {
+        const result = await printViaGateway(type, data);
+        toast.success(`Impresión enviada a ${type === 'ticket' ? 'cliente' : type === 'kitchen' ? 'cocina' : 'corte'}`);
+        return result;
+      } catch (error) {
+        console.error(`Error en gateway (${type}):`, error);
+        toast.error(`Error en impresión: ${error instanceof Error ? error.message : 'desconocido'}`);
+        throw error;
       }
-
-      if (CUPS_PRINTER_URL) {
-        try {
-          await printToCups(htmlContent, CUPS_PRINTER_URL, printerSize, {
-            printerId: preferredPrinter?.id || preferredPrinter?.address,
-            ip: preferredPrinter?.ip,
-            port: preferredPrinter?.port,
-          });
-          toast.success(`${title} enviado a CUPS`);
-          return;
-        } catch (error) {
-          console.error(`Error al imprimir ${title} por CUPS:`, error);
-          if (!preferences.fallbackToWeb) {
-            throw error;
-          }
-          toast.warning(`CUPS falló. Usando impresión por navegador para ${title}.`);
-        }
-      }
-
-      printViaBrowser(htmlContent, title);
-      toast.success(`${title} listo para imprimir`);
     },
-    [preferences]
+    []
   );
 
-  // Imprimir ticket del cliente
+  // Imprimir ticket del cliente - AHORA USA EL GATEWAY
   const printClientTicket = useCallback(
     async (
       items: CartItem[],
@@ -519,35 +551,20 @@ export function useBluetootPrinter() {
     ) => {
       const printJob = async () => {
         try {
-          const clientPrinter = getClientPrinter();
-          const useBluetooth = preferences.useBluetoothIfAvailable && clientPrinter?.address;
+          const gatewayData = {
+            items: mapItemsToGatewayFormat(items),
+            orderNumber: orderNumber?.toString() || "---",
+            customerName: customerName || "Barra",
+            total: total,
+            paymentMethodLabel: paymentMethodLabel,
+            dateStr: dateStr,
+          };
 
-          if (useBluetooth && clientPrinter?.address) {
-            const escPosCommands = generateClientTicketEscPos(
-              items,
-              total,
-              orderNumber,
-              customerName,
-              dateStr,
-              paymentMethodLabel,
-              {
-                openDrawer: preferences.openDrawerOn80mm,
-                fullCut: preferences.fullCutOn80mm,
-              }
-            );
-
-            await printMultipleToDevice(clientPrinter.address, [
-              {
-                escPosCommands,
-                printerSize: "80mm",
-                options: {
-                  openDrawer: preferences.openDrawerOn80mm,
-                  fullCut: preferences.fullCutOn80mm,
-                },
-              },
-            ]);
-            toast.success("Ticket de cliente enviado a impresora");
-          } else {
+          await printWithGateway('ticket', gatewayData);
+        } catch (error) {
+          console.error("Error al imprimir ticket:", error);
+          // Fallback a impresión por navegador si todo falla
+          if (preferences.fallbackToWeb) {
             const htmlContent = generateClientTicketHTML(
               items,
               total,
@@ -556,27 +573,58 @@ export function useBluetootPrinter() {
               dateStr,
               paymentMethodLabel
             );
-            await printWithPreferences(
-              htmlContent,
-              "Ticket Cliente",
-              "80mm",
-              clientPrinter,
-              {
-                openDrawer: preferences.openDrawerOn80mm,
-                fullCut: preferences.fullCutOn80mm,
-              }
-            );
+            printViaBrowser(htmlContent, "Ticket Cliente");
+            toast.warning("Usando impresión por navegador como fallback");
+          } else {
+            throw error;
           }
-        } catch (error) {
-          console.error("Error al imprimir ticket:", error);
-          toast.error("Error al imprimir ticket");
-          throw error;
         }
       };
 
       await enqueuePrintJob(printJob);
     },
-    [enqueuePrintJob, getClientPrinter, preferences, printWithPreferences]
+    [enqueuePrintJob, printWithGateway, preferences.fallbackToWeb]
+  );
+
+  // Imprimir comanda de cocina - AHORA USA EL GATEWAY
+  const printKitchenOrder = useCallback(
+    async (
+      items: CartItem[],
+      orderNumber: number | null,
+      customerName: string,
+      dateStr: string
+    ) => {
+      const printJob = async () => {
+        try {
+          const gatewayData = {
+            items: mapItemsToGatewayFormat(items),
+            orderNumber: orderNumber?.toString() || "---",
+            customerName: customerName || "Barra",
+            dateStr: dateStr,
+          };
+
+          await printWithGateway('kitchen', gatewayData);
+        } catch (error) {
+          console.error("Error al imprimir comanda:", error);
+          // Fallback a impresión por navegador si todo falla
+          if (preferences.fallbackToWeb) {
+            const htmlContent = generateKitchenOrderHTML(
+              items,
+              orderNumber,
+              customerName,
+              dateStr
+            );
+            printViaBrowser(htmlContent, "Comanda Cocina");
+            toast.warning("Usando impresión por navegador como fallback");
+          } else {
+            throw error;
+          }
+        }
+      };
+
+      await enqueuePrintJob(printJob);
+    },
+    [enqueuePrintJob, printWithGateway, preferences.fallbackToWeb]
   );
 
   const printCashCutTicket = useCallback(
@@ -589,82 +637,32 @@ export function useBluetootPrinter() {
     ) => {
       const printJob = async () => {
         try {
-          const htmlContent = generateCashCutTicketHTML(sales, generatedAt, title, countSummary, details);
-          await printWithPreferences(
-            htmlContent,
-            title,
-            "80mm",
-            getClientPrinter(),
-            {
-              openDrawer: preferences.openDrawerOn80mm,
-              fullCut: preferences.fullCutOn80mm,
-            }
-          );
+          const gatewayData = {
+            title: title,
+            generatedAt: generatedAt,
+            expectedCash: details?.expectedTotal || 0,
+            countedCash: details?.countedTotal || 0,
+            difference: details?.difference || 0,
+            salesCount: sales.length,
+            entries: countSummary?.denominations || [],
+          };
+
+          await printWithGateway('cash-cut', gatewayData);
         } catch (error) {
-          console.error("Error al imprimir corte de caja:", error);
-          toast.error("Error al imprimir corte de caja");
-          throw error;
-        }
-      };
-
-      await enqueuePrintJob(printJob);
-    },
-    [enqueuePrintJob, getClientPrinter, preferences, printWithPreferences]
-  );
-
-  // Imprimir comanda de cocina
-  const printKitchenOrder = useCallback(
-    async (
-      items: CartItem[],
-      orderNumber: number | null,
-      customerName: string,
-      dateStr: string
-    ) => {
-      const printJob = async () => {
-        try {
-          const kitchenPrinter = getKitchenPrinter();
-          const useBluetooth = preferences.useBluetoothIfAvailable && kitchenPrinter?.address;
-          const printerSize = kitchenPrinter?.type || "58mm";
-
-          if (useBluetooth && kitchenPrinter?.address) {
-            const escPosCommands = generateKitchenOrderEscPos(
-              items,
-              orderNumber,
-              customerName,
-              dateStr
-            );
-
-            await printMultipleToDevice(kitchenPrinter.address, [
-              {
-                escPosCommands,
-                printerSize,
-              },
-            ]);
-            toast.success("Comanda de cocina enviada a impresora");
+          console.error("Error al imprimir corte:", error);
+          if (preferences.fallbackToWeb) {
+            const htmlContent = generateCashCutTicketHTML(sales, generatedAt, title, countSummary, details);
+            printViaBrowser(htmlContent, title);
+            toast.warning("Usando impresión por navegador como fallback");
           } else {
-            const htmlContent = generateKitchenOrderHTML(
-              items,
-              orderNumber,
-              customerName,
-              dateStr
-            );
-            await printWithPreferences(
-              htmlContent,
-              "Comanda Cocina",
-              printerSize,
-              kitchenPrinter
-            );
+            throw error;
           }
-        } catch (error) {
-          console.error("Error al imprimir comanda:", error);
-          toast.error("Error al imprimir comanda");
-          throw error;
         }
       };
 
       await enqueuePrintJob(printJob);
     },
-    [enqueuePrintJob, getKitchenPrinter, preferences, printWithPreferences]
+    [enqueuePrintJob, printWithGateway, preferences.fallbackToWeb]
   );
 
   const printKitchenAndClientCombined = useCallback(
@@ -677,110 +675,21 @@ export function useBluetootPrinter() {
       paymentMethodLabel: string = "Efectivo"
     ) => {
       const printJob = async () => {
-        const clientPrinter = getClientPrinter();
-        const kitchenPrinter = getKitchenPrinter();
-
-        // Prioritize Bluetooth if available and selected
-        if (preferences.useBluetoothIfAvailable) {
-          const kitchenP = kitchenPrinter?.address ? kitchenPrinter : undefined;
-          const clientP = clientPrinter?.address ? clientPrinter : undefined;
-
-          // Case 1: Both printers are the same bluetooth device
-          if (kitchenP && clientP && kitchenP.address === clientP.address) {
-            try {
-              const kitchenEscPos = generateKitchenOrderEscPos(items, orderNumber, customerName, dateStr);
-              const clientEscPos = generateClientTicketEscPos(
-                items,
-                total,
-                orderNumber,
-                customerName,
-                dateStr,
-                paymentMethodLabel,
-                { openDrawer: preferences.openDrawerOn80mm, fullCut: preferences.fullCutOn80mm }
-              );
-
-              await printMultipleToDevice(clientP.address, [
-                { escPosCommands: kitchenEscPos, printerSize: clientP.type || "80mm" },
-                { escPosCommands: clientEscPos, printerSize: clientP.type || "80mm" },
-              ]);
-              toast.success("Comanda y ticket enviados a la misma impresora");
-              return;
-            } catch (error) {
-              console.error("Error imprimiendo en combo en un solo dispositivo:", error);
-              toast.error("Error en impresión combinada");
-              // Fallback is handled outside if needed
-            }
-          } else {
-            // Case 2: Separate bluetooth printers
-            let kitchenPrinted = false;
-            let clientPrinted = false;
-            if (kitchenP) {
-              try {
-                const escPosCommands = generateKitchenOrderEscPos(items, orderNumber, customerName, dateStr);
-                await printMultipleToDevice(kitchenP.address, [{ escPosCommands, printerSize: kitchenP.type || "58mm" }]);
-                kitchenPrinted = true;
-              } catch (e) {
-                console.error("Error imprimiendo comanda en BT separado:", e);
-                toast.error("Fallo al imprimir comanda");
-              }
-            }
-            if (clientP) {
-              try {
-                const escPosCommands = generateClientTicketEscPos(
-                  items, total, orderNumber, customerName, dateStr, paymentMethodLabel,
-                  { openDrawer: preferences.openDrawerOn80mm, fullCut: preferences.fullCutOn80mm }
-                );
-                await printMultipleToDevice(clientP.address, [{ escPosCommands, printerSize: clientP.type || "80mm" }]);
-                clientPrinted = true;
-              } catch (e) {
-                console.error("Error imprimiendo ticket en BT separado:", e);
-                toast.error("Fallo al imprimir ticket");
-              }
-            }
-            if (kitchenPrinted || clientPrinted) {
-              toast.success("Impresiones Bluetooth enviadas");
-              return; // Exit if at least one succeeded
-            }
-          }
+        try {
+          // Primero imprimir comanda de cocina
+          await printKitchenOrder(items, orderNumber, customerName, dateStr);
+          // Luego ticket de cliente
+          await printClientTicket(items, total, orderNumber, customerName, dateStr, paymentMethodLabel);
+          toast.success("Comanda y ticket enviados");
+        } catch (error) {
+          console.error("Error en impresión combinada:", error);
+          toast.error("Error en impresión combinada");
         }
-        
-        // Fallback to CUPS or Browser printing if bluetooth is not used or fails
-        const kitchenHtml = generateKitchenOrderHTML(items, orderNumber, customerName, dateStr);
-        const clientHtml = generateClientTicketHTML(
-          items, total, orderNumber, customerName, dateStr, paymentMethodLabel
-        );
-
-        if (CUPS_PRINTER_URL) {
-          try {
-            await printToCups(kitchenHtml, CUPS_PRINTER_URL, kitchenPrinter?.type || "58mm", {
-              printerId: kitchenPrinter?.id || kitchenPrinter?.address,
-              ip: kitchenPrinter?.ip,
-              port: kitchenPrinter?.port,
-            });
-            await printToCups(clientHtml, CUPS_PRINTER_URL, clientPrinter?.type || "80mm", {
-              printerId: clientPrinter?.id || clientPrinter?.address,
-              ip: clientPrinter?.ip,
-              port: clientPrinter?.port,
-            });
-            toast.success("Comanda y ticket enviados por CUPS");
-            return;
-          } catch (error) {
-            // Log error and fallback to browser
-            console.error("Error al imprimir trabajo combinado por CUPS:", error);
-            if (!preferences.fallbackToWeb) { throw error; }
-            toast.warning("CUPS falló. Usando impresión por navegador.");
-          }
-        }
-        
-        // Final fallback: Browser printing
-        const combinedHtml = `${kitchenHtml}<div style="page-break-after: always;"></div>${clientHtml}`;
-        printViaBrowser(combinedHtml, "Comanda + Ticket");
-        toast.success("Comanda y ticket listos para imprimir");
       };
 
       await enqueuePrintJob(printJob);
     },
-    [enqueuePrintJob, getClientPrinter, getKitchenPrinter, preferences]
+    [printKitchenOrder, printClientTicket, enqueuePrintJob]
   );
 
   // Imprimir ambos documentos (cliente y cocina)

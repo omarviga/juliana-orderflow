@@ -958,6 +958,10 @@ export async function printToCups(
     printerId?: string;
     ip?: string;
     port?: number;
+  },
+  printOptions?: {
+    openDrawer?: boolean;
+    fullCut?: boolean;
   }
 ): Promise<void> {
   const printerType = printerSize === "80mm" ? "client" : "kitchen";
@@ -997,25 +1001,58 @@ export async function printToCups(
 
   // 1) Gateway dedicado (el más estable en tablet).
   if (PRINT_GATEWAY_URL) {
-    const gatewayUrl = `${PRINT_GATEWAY_URL.replace(/\/$/, "")}/imprimir`;
-    attempts.push(async () => {
-      await tryRequest(
-        gatewayUrl,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(PRINT_GATEWAY_TOKEN ? { Authorization: PRINT_GATEWAY_TOKEN } : {}),
-          },
-          body: JSON.stringify({
-            impresora: printerSize,
-            texto: payload,
-            abrirCajon: false,
-            cortar: true,
-          }),
-        },
-        "Gateway"
-      );
+    const baseGateway = PRINT_GATEWAY_URL.replace(/\/$/, "");
+    const gatewayCandidates = new Set<string>();
+    const pushGatewayCandidate = (value: string) => {
+      const trimmed = value.trim().replace(/\/$/, "");
+      if (trimmed) gatewayCandidates.add(trimmed);
+    };
+    const hasExplicitPath = /^https?:\/\/[^/]+\/.+/i.test(baseGateway);
+
+    if (hasExplicitPath) {
+      pushGatewayCandidate(baseGateway);
+    } else {
+      pushGatewayCandidate(`${baseGateway}/imprimir`);
+      pushGatewayCandidate(`${baseGateway}/api/imprimir`);
+      pushGatewayCandidate(`${baseGateway}/print`);
+      pushGatewayCandidate(`${baseGateway}/api/print`);
+      // Compatibilidad con gateway nuevo (ticket unificado).
+      pushGatewayCandidate(`${baseGateway}/print/ticket`);
+      pushGatewayCandidate(`${baseGateway}/api/print/ticket`);
+    }
+
+    const authVariants: Array<Record<string, string>> = [{}];
+    if (PRINT_GATEWAY_TOKEN) {
+      authVariants.push({ Authorization: PRINT_GATEWAY_TOKEN });
+      if (!/^Bearer\s+/i.test(PRINT_GATEWAY_TOKEN)) {
+        authVariants.push({ Authorization: `Bearer ${PRINT_GATEWAY_TOKEN}` });
+      }
+      authVariants.push({ "x-api-key": PRINT_GATEWAY_TOKEN });
+      authVariants.push({ "x-access-token": PRINT_GATEWAY_TOKEN });
+    }
+
+    Array.from(gatewayCandidates).forEach((gatewayUrl) => {
+      authVariants.forEach((authHeader) => {
+        attempts.push(async () => {
+          await tryRequest(
+            gatewayUrl,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...authHeader,
+              },
+              body: JSON.stringify({
+                impresora: printerSize,
+                texto: payload,
+                abrirCajon: Boolean(printOptions?.openDrawer),
+                cortar: printOptions?.fullCut ?? true,
+              }),
+            },
+            `Gateway (${gatewayUrl})`
+          );
+        });
+      });
     });
   }
 
@@ -1052,6 +1089,8 @@ export async function printToCups(
             printerId: printerMeta?.printerId,
             ip: printerMeta?.ip || fallbackIp,
             port: printerMeta?.port || fallbackPort || 9100,
+            openDrawer: Boolean(printOptions?.openDrawer),
+            fullCut: printOptions?.fullCut ?? true,
             lines,
           }),
         },

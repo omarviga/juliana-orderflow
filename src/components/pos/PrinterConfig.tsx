@@ -132,6 +132,9 @@ export function PrinterConfig() {
               printerId: printer.id || printer.address,
               ip: printer.ip,
               port: printer.port,
+            }, {
+              openDrawer: printer.type === "80mm" ? preferences.openDrawerOn80mm : false,
+              fullCut: true,
             });
             toast.success(`Prueba enviada a ${printer.name}`, { id: toastId });
             return;

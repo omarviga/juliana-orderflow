@@ -28,9 +28,10 @@ const LP_TIMEOUT_MS = Number(process.env.LP_TIMEOUT_MS || 12000);
 app.use(cors());
 app.use(express.json());
 
-function printWithLp({ destination, title, text, timeoutMs = LP_TIMEOUT_MS }) {
+function printWithLp({ destination, title, text, raw = false, timeoutMs = LP_TIMEOUT_MS }) {
   return new Promise((resolve, reject) => {
     const args = ["-d", destination, "-t", title];
+    if (raw) args.push("-o", "raw");
     const child = spawn("lp", args, { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
@@ -71,6 +72,18 @@ function printWithLp({ destination, title, text, timeoutMs = LP_TIMEOUT_MS }) {
 
     child.stdin.write(text);
     child.stdin.end();
+  });
+}
+
+async function sendDrawerPulse(destination) {
+  // ESC p m t1 t2 -> pulso para cajón en impresoras ESC/POS.
+  const pulse = Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa, 0x0a]);
+  await printWithLp({
+    destination,
+    title: "Abrir cajon",
+    text: pulse,
+    raw: true,
+    timeoutMs: 5000,
   });
 }
 
@@ -317,7 +330,7 @@ function resolveDestination({ normalizedType, printerId }) {
 //   "payload": { ... } // opcional, para generar líneas automáticamente
 // }
 app.post("/api/print-ticket", async (req, res) => {
-  const { type = "client", paperSize, printerId, ip, port, lines, payload = {} } = req.body || {};
+  const { type = "client", paperSize, printerId, ip, port, openDrawer, fullCut, lines, payload = {} } = req.body || {};
   const normalizedType = resolveTicketType({ type, paperSize });
   const destination = resolveDestination({ normalizedType, printerId });
 
@@ -334,6 +347,10 @@ app.post("/api/print-ticket", async (req, res) => {
   const title = normalizedType === "kitchen" ? "Comanda Cocina" : "Ticket Cliente";
 
   try {
+    if (Boolean(openDrawer) && normalizedType === "client") {
+      await sendDrawerPulse(destination);
+    }
+
     const result = await printWithLp({
       destination,
       title,
@@ -348,6 +365,8 @@ app.post("/api/print-ticket", async (req, res) => {
       printerId: printerId || null,
       ip: ip || null,
       port: port || null,
+      openDrawer: Boolean(openDrawer),
+      fullCut: fullCut ?? null,
       output: result.stdout || "enviado",
     });
   } catch (error) {
