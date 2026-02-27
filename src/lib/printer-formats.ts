@@ -785,6 +785,39 @@ function htmlToEscPosCommands(
   return commands;
 }
 
+function htmlToPlainText(htmlContent: string): string {
+  if (typeof DOMParser !== "undefined") {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlContent, "text/html");
+    const bodyText = doc.body?.textContent ?? "";
+    return bodyText
+      .split("\n")
+      .map((line) => line.replace(/\s+/g, " ").trim())
+      .filter((line) => line.length > 0)
+      .join("\n");
+  }
+
+  return htmlContent
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export async function printToCups(htmlContent: string, printerUrl: string): Promise<void> {
+  const payload = htmlToPlainText(htmlContent);
+  const response = await fetch(printerUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "text/plain",
+    },
+    body: payload,
+  });
+
+  if (!response.ok) {
+    throw new Error(`CUPS respondió ${response.status}`);
+  }
+}
+
 /**
  * Imprime usando la API de impresión del navegador (fallback).
  * Esto crea un iframe oculto, escribe el HTML en él y abre el diálogo de impresión

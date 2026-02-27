@@ -7,6 +7,7 @@ import {
   generateCashCutTicketHTML,
   generateKitchenOrderHTML,
   printMultipleToDevice,
+  printToCups,
   printToDevice,
   printViaBrowser,
 } from "@/lib/printer-formats";
@@ -30,6 +31,7 @@ interface PrinterPreferences {
 }
 
 const STORAGE_KEY = "printerPreferences";
+const CUPS_PRINTER_URL = import.meta.env.VITE_CUPS_PRINTER_URL?.trim();
 const DEFAULT_PREFERENCES: PrinterPreferences = {
   autoPrint: true,
   useBluetoothIfAvailable: false,
@@ -228,6 +230,20 @@ export function useBluetootPrinter() {
             }
             toast.warning(`Bluetooth falló. Usando impresión por navegador para ${title}.`);
           }
+        }
+      }
+
+      if (CUPS_PRINTER_URL) {
+        try {
+          await printToCups(htmlContent, CUPS_PRINTER_URL);
+          toast.success(`${title} enviado a CUPS`);
+          return;
+        } catch (error) {
+          console.error(`Error al imprimir ${title} por CUPS:`, error);
+          if (!preferences.fallbackToWeb) {
+            throw error;
+          }
+          toast.warning(`CUPS falló. Usando impresión por navegador para ${title}.`);
         }
       }
 
