@@ -19,6 +19,7 @@ import type { CashRegisterSale } from "@/lib/cash-register";
 
 const STORAGE_KEY = "printerPreferences";
 const AVAILABLE_PRINTERS_KEY = "availablePrinters";
+const MAX_PRINT_JOB_MS = 5000;
 const CUPS_PRINTER_URL = import.meta.env.VITE_CUPS_PRINTER_URL?.trim();
 const FIXED_CLIENT_PRINTER_ID = "GLPrinter_80mm";
 const FIXED_KITCHEN_PRINTER_ID = "GLPrinter_80mm";
@@ -154,6 +155,22 @@ export function useBluetootPrinter() {
   const [isScanning, setIsScanning] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [printQueue, setPrintQueue] = useState<Array<() => Promise<void>>>([]);
+
+  const withPrintTimeout = useCallback(async <T,>(work: Promise<T>, label: string) => {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error(`${label} excedió ${MAX_PRINT_JOB_MS / 1000}s`));
+      }, MAX_PRINT_JOB_MS);
+    });
+
+    try {
+      return await Promise.race([work, timeoutPromise]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }, []);
 
   // Sincronizar tipos guardados con la lista visible de impresoras.
   useEffect(() => {
@@ -422,9 +439,10 @@ export function useBluetootPrinter() {
       const job = printQueue[0];
 
       try {
-        await job();
+        await withPrintTimeout(job(), "El trabajo de impresión");
       } catch (error) {
         console.error("Error en trabajo de impresión:", error);
+        toast.error("La impresión tardó más de 5s. Verifica conexión de impresora.");
       } finally {
         if (isMounted) {
           setPrintQueue((prev) => prev.slice(1));
@@ -438,7 +456,7 @@ export function useBluetootPrinter() {
     return () => {
       isMounted = false;
     };
-  }, [printQueue, isPrinting]);
+  }, [isPrinting, printQueue, withPrintTimeout]);
 
   const printWithPreferences = useCallback(
     async (

@@ -22,7 +22,7 @@ const DEFAULT_BUSINESS_ADDRESS =
   "AV. MIGUEL HIDALGO #276, CENTRO, ACÁMBARO. GTO.";
 const DEFAULT_BUSINESS_PHONE = "TEL | WHATSAPP:  417 206 9111";
 const PRINTER_80MM_NAME = process.env.PRINTER_80MM_NAME || "GLPrinter_80mm";
-const LP_TIMEOUT_MS = Number(process.env.LP_TIMEOUT_MS || 12000);
+const LP_TIMEOUT_MS = Number(process.env.LP_TIMEOUT_MS || 5000);
 
 app.use(cors());
 app.use(express.json());
