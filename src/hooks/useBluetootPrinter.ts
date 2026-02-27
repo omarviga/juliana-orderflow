@@ -393,7 +393,7 @@ export function useBluetootPrinter() {
 
       if (CUPS_PRINTER_URL) {
         try {
-          await printToCups(htmlContent, CUPS_PRINTER_URL);
+          await printToCups(htmlContent, CUPS_PRINTER_URL, printerSize);
           toast.success(`${title} enviado a CUPS`);
           return;
         } catch (error) {

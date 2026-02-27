@@ -127,7 +127,7 @@ export function PrinterConfig() {
 
         if (CUPS_PRINTER_URL) {
           try {
-            await printToCups(testHtml, CUPS_PRINTER_URL);
+            await printToCups(testHtml, CUPS_PRINTER_URL, printer.type);
             toast.success(`Prueba enviada a ${printer.name}`, { id: toastId });
             return;
           } catch (error) {
