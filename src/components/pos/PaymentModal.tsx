@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +24,7 @@ import {
   type OfflineOrderPayload,
 } from "@/lib/offline-orders";
 import { formatCurrencyMXN } from "@/lib/currency";
+import { generateClientTicketHTML } from "@/lib/printer-formats";
 
 const STANDALONE_EXTRA_PRODUCT_NAMES = new Set([
   "EXTRA SUELTO",
@@ -63,6 +64,7 @@ export function PaymentModal({
   const [customerName, setCustomerName] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
   const [isAutoPrinting, setIsAutoPrinting] = useState(false);
+  const [ticketDateStr, setTicketDateStr] = useState("");
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [allowManualNameInput, setAllowManualNameInput] = useState(false);
   const printer = useBluetootPrinter();
@@ -124,15 +126,20 @@ export function PaymentModal({
     return msg.includes("fetch") || msg.includes("network") || msg.includes("failed to fetch");
   };
 
-  const printCombinedTickets = async (orderNumber: number | null, orderCustomerName: string) => {
-    const now = new Date();
-    const dateStr = now.toLocaleDateString("es-MX", {
+  const formatTicketDate = (date: Date) =>
+    date.toLocaleDateString("es-MX", {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
     });
+
+  const printCombinedTickets = async (
+    orderNumber: number | null,
+    orderCustomerName: string,
+    dateStr: string
+  ) => {
 
     await printer.printKitchenAndClientCombined(
       items,
@@ -143,6 +150,19 @@ export function PaymentModal({
       getPaymentMethodLabel(paymentMethod)
     );
   };
+
+  const ticketPreviewHtml = useMemo(() => {
+    if (!savedOrderNumber) return "";
+
+    return generateClientTicketHTML(
+      items,
+      total,
+      savedOrderNumber,
+      customerName || "Barra",
+      ticketDateStr,
+      getPaymentMethodLabel(paymentMethod)
+    );
+  }, [customerName, items, paymentMethod, savedOrderNumber, ticketDateStr, total]);
 
   const buildOfflinePayload = (normalizedCustomerName: string): Omit<OfflineOrderPayload, "localId" | "localOrderNumber" | "createdAt"> => ({
     customerName: normalizedCustomerName,
@@ -209,6 +229,10 @@ export function PaymentModal({
       }
 
       setSavedOrderNumber(order.order_number);
+      setCustomerName(normalizedCustomerName);
+
+      const formattedTicketDate = formatTicketDate(new Date());
+      setTicketDateStr(formattedTicketDate);
       registerPaidSale({
         orderId: order.id,
         orderNumber: order.order_number,
@@ -223,7 +247,7 @@ export function PaymentModal({
       if (printer.preferences.autoPrint) {
         setIsAutoPrinting(true);
         try {
-          await printCombinedTickets(order.order_number, normalizedCustomerName);
+          await printCombinedTickets(order.order_number, normalizedCustomerName, formattedTicketDate);
         } catch (err) {
           console.error("Error en impresión automática:", err);
           toast.warning("No se pudo imprimir automáticamente");
@@ -236,6 +260,7 @@ export function PaymentModal({
         const offlineOrder = enqueueOfflineOrder(buildOfflinePayload(normalizedCustomerName));
         setSavedOrderNumber(offlineOrder.localOrderNumber);
         setCustomerName(normalizedCustomerName);
+        setTicketDateStr(formatTicketDate(new Date(offlineOrder.createdAt)));
         registerPaidSale({
           orderId: offlineOrder.localId,
           orderNumber: offlineOrder.localOrderNumber,
@@ -258,7 +283,7 @@ export function PaymentModal({
   const printTicket = async () => {
     setIsAutoPrinting(true);
     try {
-      await printCombinedTickets(savedOrderNumber, customerName);
+      await printCombinedTickets(savedOrderNumber, customerName || "Barra", ticketDateStr || formatTicketDate(new Date()));
     } catch (err) {
       console.error("Error al imprimir:", err);
       toast.error("Error al imprimir");
@@ -274,6 +299,7 @@ export function PaymentModal({
     setSavedOrderNumber(null);
     setCustomerName("");
     setPaymentMethod("efectivo");
+    setTicketDateStr("");
     setAllowManualNameInput(false);
     blurActiveElement();
     onClose();
@@ -388,6 +414,16 @@ export function PaymentModal({
           </Button>
         ) : (
           <div className="space-y-3">
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-xs font-medium text-muted-foreground">Vista previa del ticket</p>
+              <div className="max-h-64 overflow-auto rounded border bg-white p-2">
+                <div
+                  className="origin-top scale-[0.78]"
+                  style={{ width: "128%" }}
+                  dangerouslySetInnerHTML={{ __html: ticketPreviewHtml }}
+                />
+              </div>
+            </div>
             {isAutoPrinting && (
               <div className="flex items-center justify-center gap-2 rounded-lg bg-blue-50 p-2 text-sm text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -401,7 +437,7 @@ export function PaymentModal({
                 onClick={printTicket}
                 disabled={isAutoPrinting}
               >
-                <Printer className="h-4 w-4" /> Cocina + Ticket
+                <Printer className="h-4 w-4" /> Volver a imprimir cocina + ticket
               </Button>
             </div>
           </div>
