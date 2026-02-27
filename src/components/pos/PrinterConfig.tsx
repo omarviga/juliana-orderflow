@@ -214,12 +214,17 @@ export function PrinterConfig() {
                   <div className="mt-2 flex items-center gap-2">
                     <Select
                       value={printer.type ?? "none"}
-                      onValueChange={(value) =>
-                        assignPrinterType(
-                          printer.address,
-                          value === "none" ? null : (value as "80mm" | "58mm")
-                        )
-                      }
+                      onValueChange={(value) => {
+                        try {
+                          assignPrinterType(
+                            printer.address,
+                            value === "none" ? null : (value as "80mm" | "58mm")
+                          );
+                        } catch (error) {
+                          console.error("Error asignando impresora:", error);
+                          toast.error("No se pudo asignar la impresora");
+                        }
+                      }}
                     >
                       <SelectTrigger className="h-8 w-[180px] text-xs">
                         <SelectValue placeholder="Asignar como..." />

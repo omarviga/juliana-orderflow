@@ -165,15 +165,11 @@ export function useBluetootPrinter() {
         optionalServices: ["00001101-0000-1000-8000-00805f9b34fb"],
       });
 
-      const existingPrinter = Object.values(preferences.printers).find(
-        (p) => p.address === device.id
-      );
-
       const newPrinter: PrinterDevice = {
         address: device.id,
         name: device.name || "Impresora Bluetooth",
         id: device.id,
-        type: existingPrinter?.type || null,
+        type: null,
         status: "disconnected",
         lastUsed: new Date(),
       };
@@ -184,16 +180,20 @@ export function useBluetootPrinter() {
         return [...prev, newPrinter];
       });
 
-      if (!existingPrinter) {
+      setPreferences((prev) => {
+        if (prev.printers[newPrinter.id]) {
+          return prev;
+        }
         const newPrefs: PrinterPreferences = {
-          ...preferences,
+          ...prev,
           printers: {
-            ...preferences.printers,
+            ...prev.printers,
             [newPrinter.id]: newPrinter,
           },
         };
-        savePreferences(newPrefs);
-      }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
+        return newPrefs;
+      });
 
       return newPrinter;
     } catch (error) {
@@ -205,7 +205,7 @@ export function useBluetootPrinter() {
     } finally {
       setIsScanning(false);
     }
-  }, [preferences, savePreferences]);
+  }, []);
 
   // Asignar tipo a una impresora
   const assignPrinterType = useCallback(
