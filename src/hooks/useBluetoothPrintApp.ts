@@ -1,17 +1,5 @@
 import { useCallback } from "react";
-import { toast } from "sonner";
 import type { CartItem } from "@/types/pos";
-
-// Supabase URL - se obtiene de variables de entorno
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-const PRINT_TICKET_FUNCTION = SUPABASE_URL
-  ? `${SUPABASE_URL}/functions/v1/print-ticket`
-  : "";
-const PRINT_KITCHEN_FUNCTION = SUPABASE_URL
-  ? `${SUPABASE_URL}/functions/v1/print-kitchen`
-  : "";
 
 /**
  * Tipos para la API JSON de Bluetooth Print App
@@ -31,11 +19,9 @@ interface PrinterData {
 
 /**
  * Hook para integrar con la app Bluetooth Print (mate.bluetoothprint)
- * Usa Supabase Edge Functions para generar JSON
+ * Genera JSON localmente y lo envía por esquema URI.
  */
 export function useBluetoothPrintApp() {
-  const canUseSupabaseFunctions = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
-
   const buildClientPrintData = useCallback(
     (
       items: CartItem[],
@@ -106,43 +92,6 @@ export function useBluetoothPrintApp() {
   );
 
   /**
-   * Obtiene los datos JSON del servidor de Supabase
-   */
-  const fetchPrintData = useCallback(
-    async (
-      functionUrl: string,
-      body: Record<string, unknown>
-    ): Promise<PrinterData[] | null> => {
-      if (!canUseSupabaseFunctions || !functionUrl) {
-        return null;
-      }
-
-      try {
-        const response = await fetch(functionUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify(body),
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-        return data;
-      } catch (error) {
-        console.error("Error fetching print data:", error);
-        toast.error("Error al obtener datos de impresión");
-        return null;
-      }
-    },
-    [canUseSupabaseFunctions]
-  );
-
-  /**
    * Envía el JSON a la app Bluetooth Print via esquema URI
    * Usa my.bluetoothprint.scheme:// que es más confiable
    */
@@ -184,28 +133,20 @@ export function useBluetoothPrintApp() {
       }
     ) => {
       try {
-        const printData = await fetchPrintData(PRINT_TICKET_FUNCTION, {
+        const payload = buildClientPrintData(
           items,
           total,
           orderNumber,
           customerName,
-          businessName: businessSettings?.name,
-          businessSubtitle: businessSettings?.subtitle,
-          businessAddress: businessSettings?.address,
-          businessPhone: businessSettings?.phone,
-        });
-
-        const payload =
-          printData ??
-          buildClientPrintData(items, total, orderNumber, customerName, businessSettings);
-
+          businessSettings
+        );
         return sendToPrintApp(payload);
       } catch (err) {
         console.error("Error printing client ticket:", err);
         return false;
       }
     },
-    [buildClientPrintData, fetchPrintData, sendToPrintApp]
+    [buildClientPrintData, sendToPrintApp]
   );
 
   const getClientPrintPayload = useCallback(
@@ -234,21 +175,14 @@ export function useBluetoothPrintApp() {
       customerName: string
     ) => {
       try {
-        const printData = await fetchPrintData(PRINT_KITCHEN_FUNCTION, {
-          items,
-          orderNumber,
-          customerName,
-        });
-
-        const payload = printData ?? buildKitchenPrintData(items, orderNumber, customerName);
-
+        const payload = buildKitchenPrintData(items, orderNumber, customerName);
         return sendToPrintApp(payload);
       } catch (err) {
         console.error("Error printing kitchen order:", err);
         return false;
       }
     },
-    [buildKitchenPrintData, fetchPrintData, sendToPrintApp]
+    [buildKitchenPrintData, sendToPrintApp]
   );
 
   const getKitchenPrintPayload = useCallback(

@@ -12,9 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Printer, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
-import { useBluetoothPrintApp } from "@/hooks/useBluetoothPrintApp";
 import {
   getPaymentMethodLabel,
   registerPaidSale,
@@ -26,7 +24,6 @@ import {
   type OfflineOrderPayload,
 } from "@/lib/offline-orders";
 import { formatCurrencyMXN } from "@/lib/currency";
-import { generateClientTicketHTML } from "@/lib/printer-formats";
 
 const STANDALONE_EXTRA_PRODUCT_NAMES = new Set([
   "EXTRA SUELTO",
@@ -68,14 +65,7 @@ export function PaymentModal({
   const [isAutoPrinting, setIsAutoPrinting] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [allowManualNameInput, setAllowManualNameInput] = useState(false);
-  const [showPrintDebug, setShowPrintDebug] = useState(false);
-  const [printDebugPayload, setPrintDebugPayload] = useState<{
-    bluetoothJson: string;
-    html: string;
-  } | null>(null);
-
   const printer = useBluetootPrinter();
-  const printApp = useBluetoothPrintApp();
   const quickNames = ["Barra", "Para llevar"];
 
   useEffect(() => {
@@ -134,21 +124,6 @@ export function PaymentModal({
     return msg.includes("fetch") || msg.includes("network") || msg.includes("failed to fetch");
   };
 
-  const buildOfflinePayload = (normalizedCustomerName: string): Omit<OfflineOrderPayload, "localId" | "localOrderNumber" | "createdAt"> => ({
-    customerName: normalizedCustomerName,
-    total,
-    paymentMethod,
-    items: items.map((item) => ({
-      productId: item.product.id,
-      productSizeId: item.productSize?.id || null,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      subtotal: item.subtotal,
-      customLabel: item.customLabel || null,
-      customizationIngredientIds: (item.customizations || []).map((c) => c.ingredient.id),
-    })),
-  });
-
   const printWithWebFallback = async (
     type: "cliente" | "cocina",
     orderNumber: number | null,
@@ -177,6 +152,21 @@ export function PaymentModal({
 
     await printer.printKitchenOrder(items, orderNumber, orderCustomerName, dateStr);
   };
+
+  const buildOfflinePayload = (normalizedCustomerName: string): Omit<OfflineOrderPayload, "localId" | "localOrderNumber" | "createdAt"> => ({
+    customerName: normalizedCustomerName,
+    total,
+    paymentMethod,
+    items: items.map((item) => ({
+      productId: item.product.id,
+      productSizeId: item.productSize?.id || null,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      subtotal: item.subtotal,
+      customLabel: item.customLabel || null,
+      customizationIngredientIds: (item.customizations || []).map((c) => c.ingredient.id),
+    })),
+  });
 
   const handlePay = async () => {
     if (!canProcessPayment) {
@@ -238,52 +228,11 @@ export function PaymentModal({
       });
       toast.success(`Pedido #${order.order_number} guardado`);
 
-      try {
-        const dateStr = new Date().toLocaleDateString("es-MX", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-        const html = generateClientTicketHTML(
-          items,
-          total,
-          order.order_number,
-          normalizedCustomerName,
-          dateStr,
-          getPaymentMethodLabel(paymentMethod)
-        );
-        const bluetoothPayload = printApp.getClientPrintPayload(
-          items,
-          total,
-          order.order_number,
-          normalizedCustomerName
-        );
-        setPrintDebugPayload({
-          bluetoothJson: JSON.stringify(bluetoothPayload, null, 2),
-          html,
-        });
-      } catch (err) {
-        console.error("Error al preparar debug de impresión:", err);
-      }
-
       // Auto-print if enabled (single ticket)
       if (printer.preferences.autoPrint) {
         setIsAutoPrinting(true);
         try {
-          let printed = false;
-          if (printApp.isBluetoothPrintAppAvailable()) {
-            printed = await printApp.printClientTicket(
-              items,
-              total,
-              order.order_number,
-              normalizedCustomerName
-            );
-          }
-          if (!printed) {
-            await printWithWebFallback("cliente", order.order_number, normalizedCustomerName);
-          }
+          await printWithWebFallback("cliente", order.order_number, normalizedCustomerName);
         } catch (err) {
           console.error("Error en impresión automática:", err);
           toast.warning("No se pudo imprimir automáticamente");
@@ -318,15 +267,6 @@ export function PaymentModal({
   const printTicket = async (type: "cliente" | "cocina") => {
     setIsAutoPrinting(true);
     try {
-      if (type === "cliente" && printApp.isBluetoothPrintAppAvailable()) {
-        const printed = await printApp.printClientTicket(
-          items,
-          total,
-          savedOrderNumber,
-          customerName
-        );
-        if (printed) return;
-      }
       await printWithWebFallback(type, savedOrderNumber, customerName);
     } catch (err) {
       console.error("Error al imprimir:", err);
@@ -473,29 +413,6 @@ export function PaymentModal({
                 <Printer className="h-4 w-4" /> Ticket
               </Button>
             </div>
-            {printDebugPayload && (
-              <div className="space-y-2">
-                <Button
-                  variant="ghost"
-                  className="w-full"
-                  onClick={() => setShowPrintDebug((prev) => !prev)}
-                >
-                  {showPrintDebug ? "Ocultar datos de impresión" : "Ver datos de impresión"}
-                </Button>
-                {showPrintDebug && (
-                  <div className="space-y-2">
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground">Bluetooth JSON</p>
-                      <Textarea value={printDebugPayload.bluetoothJson} readOnly rows={6} />
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium text-muted-foreground">HTML (PDF)</p>
-                      <Textarea value={printDebugPayload.html} readOnly rows={6} />
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
       </DialogContent>

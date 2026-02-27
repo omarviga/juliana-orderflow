@@ -164,6 +164,8 @@ export function generateClientTicketHTML(
           body { margin: 0; padding: 0; background: #fff; font-family: 'Trebuchet MS', 'Segoe UI', Arial, sans-serif; width: ${config.width}mm; color: #111; }
           .receipt { width: 100%; padding: 3mm; }
           .brand-top { border: 2px solid #000; border-radius: 8px; padding: 2.5mm 2mm; text-align: center; margin-bottom: 2mm; }
+          .brand-logo { display: flex; justify-content: center; margin-bottom: 1.5mm; }
+          .brand-logo img { width: 42mm; max-width: 100%; height: auto; }
           .brand-script { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; line-height: 1; color: #000; }
           .brand-subtitle { margin-top: 1mm; font-size: 10px; font-weight: 700; letter-spacing: 1.4px; color: #000; }
           .brand-meta { margin-top: 1.5mm; font-size: 9px; line-height: 1.35; color: #3a3a3a; }
@@ -184,6 +186,9 @@ export function generateClientTicketHTML(
       <body>
         <div class="receipt print-ticket-cliente">
           <div class="brand-top">
+            <div class="brand-logo">
+              <img src="/juliana-logo.png" alt="Juliana" />
+            </div>
             <div class="brand-script">Juliana</div>
             <div class="brand-subtitle">BARRA COTIDIANA</div>
             <div class="brand-meta">AV. MIGUEL HIDALGO #276, COL CENTRO, ACAMBARO GTO.<br/>Tel. 417 206 9111</div>
@@ -753,7 +758,11 @@ function htmlToEscPosCommands(
  * para ese iframe, evitando abrir una nueva pestaña.
  */
 export function printViaBrowser(htmlContent: string, title: string = "Impresión"): void {
-  // Crear un iframe para la impresión
+  // Desactivar cualquier intento de abrir una nueva pestaña durante la impresión.
+  const originalOpen = window.open;
+  window.open = () => null;
+
+  // Crear un iframe para la impresión (misma ventana)
   const iframe = document.createElement("iframe");
   iframe.setAttribute("title", title);
 
@@ -770,6 +779,7 @@ export function printViaBrowser(htmlContent: string, title: string = "Impresión
 
   const iframeWindow = iframe.contentWindow;
   if (!iframeWindow) {
+    window.open = originalOpen;
     document.body.removeChild(iframe);
     throw new Error("No se pudo obtener la ventana del iframe de impresión.");
   }
@@ -788,8 +798,8 @@ export function printViaBrowser(htmlContent: string, title: string = "Impresión
       console.error("Error al intentar imprimir:", e);
       throw new Error("Fallo al invocar la impresión del navegador.");
     } finally {
-      // Limpiar el iframe después de un breve retraso para no interferir
-      // con el diálogo de impresión.
+      // Restaurar window.open y limpiar el iframe
+      window.open = originalOpen;
       setTimeout(() => {
         if (iframe.parentNode) {
           iframe.parentNode.removeChild(iframe);
