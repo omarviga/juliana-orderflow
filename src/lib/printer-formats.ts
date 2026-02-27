@@ -1,5 +1,7 @@
 import type { CartItem } from "@/types/pos";
 import type { CashRegisterSale } from "@/lib/cash-register";
+const PRINT_GATEWAY_URL = import.meta.env.VITE_PRINT_GATEWAY_URL?.trim();
+const PRINT_GATEWAY_TOKEN = import.meta.env.VITE_PRINT_GATEWAY_TOKEN?.trim();
 
 export interface CashCountEntry {
   label: string;
@@ -809,33 +811,92 @@ export async function printToCups(
   printerSize: "80mm" | "58mm" = "80mm"
 ): Promise<void> {
   const payload = htmlToPlainText(htmlContent);
-  const isFastEndpoint = /\/api\/print-ticket(?:\?|$)/.test(printerUrl);
-  const response = await fetch(
-    isFastEndpoint
-      ? printerUrl
-      : `${printerUrl}${printerUrl.includes("?") ? "&" : "?"}size=${encodeURIComponent(printerSize)}`,
-    {
-      method: "POST",
-      headers: isFastEndpoint
-        ? {
-            "Content-Type": "application/json",
-          }
-        : {
-            "Content-Type": "text/plain",
-            "X-Printer-Size": printerSize,
-          },
-      body: isFastEndpoint
-        ? JSON.stringify({
-            type: printerSize === "58mm" ? "kitchen" : "client",
-            lines: payload.split("\n").filter((line) => line.trim().length > 0),
-          })
-        : payload,
-    }
-  );
+  const lines = payload.split("\n").filter((line) => line.trim().length > 0);
+  const errors: string[] = [];
 
-  if (!response.ok) {
-    throw new Error(`CUPS respondió ${response.status}`);
+  const tryRequest = async (url: string, init: RequestInit, label: string) => {
+    const response = await fetch(url, init);
+    if (!response.ok) {
+      throw new Error(`${label} respondió ${response.status}`);
+    }
+  };
+
+  const attempts: Array<() => Promise<void>> = [];
+
+  // 1) Gateway dedicado (el más estable en tablet).
+  if (PRINT_GATEWAY_URL) {
+    const gatewayUrl = `${PRINT_GATEWAY_URL.replace(/\/$/, "")}/imprimir`;
+    attempts.push(async () => {
+      await tryRequest(
+        gatewayUrl,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(PRINT_GATEWAY_TOKEN ? { Authorization: PRINT_GATEWAY_TOKEN } : {}),
+          },
+          body: JSON.stringify({
+            impresora: printerSize,
+            texto: payload,
+            abrirCajon: false,
+            cortar: true,
+          }),
+        },
+        "Gateway"
+      );
+    });
   }
+
+  // 2) Endpoint rápido local.
+  const baseFastUrl = /\/api\/print-ticket(?:\?|$)/.test(printerUrl)
+    ? printerUrl
+    : `${printerUrl.replace(/\/$/, "")}/api/print-ticket`;
+  attempts.push(async () => {
+    await tryRequest(
+      baseFastUrl,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          type: printerSize === "58mm" ? "kitchen" : "client",
+          lines,
+        }),
+      },
+      "API rápida"
+    );
+  });
+
+  // 3) URL original (compatibilidad).
+  const originalUrl = /\/api\/print-ticket(?:\?|$)/.test(printerUrl)
+    ? `${printerUrl}${printerUrl.includes("?") ? "&" : "?"}size=${encodeURIComponent(printerSize)}`
+    : `${printerUrl}${printerUrl.includes("?") ? "&" : "?"}size=${encodeURIComponent(printerSize)}`;
+  attempts.push(async () => {
+    await tryRequest(
+      originalUrl,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/plain",
+          "X-Printer-Size": printerSize,
+        },
+        body: payload,
+      },
+      "Endpoint original"
+    );
+  });
+
+  for (const attempt of attempts) {
+    try {
+      await attempt();
+      return;
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : "Error desconocido");
+    }
+  }
+
+  throw new Error(`No se pudo imprimir. Intentos: ${errors.join(" | ")}`);
 }
 
 /**
