@@ -146,12 +146,98 @@ async function printViaGateway(
 function mapItemsToGatewayFormat(items: CartItem[]) {
   return items.map(item => ({
     quantity: item.quantity,
-    name: item.product?.name || item.name || "Producto",
-    product: { name: item.product?.name || item.name || "Producto" },
+    name: item.product?.name || "Producto",
+    product: { name: item.product?.name || "Producto" },
     subtotal: item.subtotal || 0,
     customLabel: item.customLabel,
     productSize: item.productSize ? { name: item.productSize.name } : undefined,
   }));
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildCombined80mmPdfHTML(
+  items: CartItem[],
+  total: number,
+  orderNumber: number | null,
+  customerName: string,
+  dateStr: string,
+  paymentMethodLabel: string
+): string {
+  const safeCustomer = escapeHtml(customerName || "Barra");
+  const safeDate = escapeHtml(dateStr);
+  const safePayment = escapeHtml(paymentMethodLabel || "Efectivo");
+
+  const kitchenItems = items
+    .map((item) => {
+      const name = escapeHtml(item.product?.name || "Producto");
+      const size = item.productSize?.name ? ` (${escapeHtml(item.productSize.name)})` : "";
+      const notes = [
+        ...(item.customizations || []).map((c) => `- ${escapeHtml(c.ingredient.name)}`),
+        ...(item.customLabel ? [`- ${escapeHtml(item.customLabel)}`] : []),
+        ...(item.kitchenNote ? [`- Nota: ${escapeHtml(item.kitchenNote)}`] : []),
+      ]
+        .map((line) => `<div class="mod">${line}</div>`)
+        .join("");
+
+      return `<div class="item"><div class="line"><strong>${item.quantity}x ${name}${size}</strong></div>${notes}</div>`;
+    })
+    .join("");
+
+  const clientItems = items
+    .map((item) => {
+      const name = escapeHtml(item.product?.name || "Producto");
+      const size = item.productSize?.name ? ` (${escapeHtml(item.productSize.name)})` : "";
+      const custom = item.customLabel ? `<div class="mod">- ${escapeHtml(item.customLabel)}</div>` : "";
+      return `<div class="line"><span>${item.quantity}x ${name}${size}</span><span>$${item.subtotal.toFixed(0)}</span></div>${custom}`;
+    })
+    .join("");
+
+  return `
+    <html>
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <style>
+          @page { size: 80mm auto; margin: 2mm; }
+          * { box-sizing: border-box; }
+          body { margin: 0; width: 80mm; font-family: 'Courier New', monospace; color: #000; }
+          .ticket { padding: 2mm; font-size: 11px; }
+          .title { text-align: center; font-size: 14px; font-weight: 700; margin-bottom: 1mm; }
+          .line { display: flex; justify-content: space-between; gap: 2mm; margin: 1mm 0; }
+          .mod { margin-left: 2mm; font-size: 10px; }
+          .sep { border-top: 1px dashed #000; margin: 2mm 0; }
+          .section { margin-top: 2mm; font-weight: 700; font-size: 12px; text-transform: uppercase; }
+          .total { border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 1.5mm 0; margin-top: 2mm; font-size: 13px; font-weight: 700; }
+          .cut { margin: 3mm 0; border-top: 2px dashed #000; }
+        </style>
+      </head>
+      <body>
+        <div class="ticket">
+          <div class="title">COMANDA #${orderNumber || "---"}</div>
+          <div class="line"><span>Cliente:</span><strong>${safeCustomer}</strong></div>
+          <div class="line"><span>Fecha:</span><span>${safeDate}</span></div>
+          <div class="sep"></div>
+          ${kitchenItems}
+          <div class="cut"></div>
+          <div class="title">TICKET CLIENTE #${orderNumber || "---"}</div>
+          <div class="line"><span>Cliente:</span><strong>${safeCustomer}</strong></div>
+          <div class="line"><span>Fecha:</span><span>${safeDate}</span></div>
+          <div class="line"><span>Pago:</span><strong>${safePayment}</strong></div>
+          <div class="sep"></div>
+          ${clientItems}
+          <div class="line total"><span>TOTAL</span><span>$${total.toFixed(0)}</span></div>
+        </div>
+      </body>
+    </html>
+  `;
 }
 
 export function useBluetootPrinter() {
@@ -684,11 +770,16 @@ export function useBluetootPrinter() {
     ) => {
       const printJob = async () => {
         try {
-          // Primero imprimir comanda de cocina
-          await printKitchenOrder(items, orderNumber, customerName, dateStr);
-          // Luego ticket de cliente
-          await printClientTicket(items, total, orderNumber, customerName, dateStr, paymentMethodLabel);
-          toast.success("Comanda y ticket enviados");
+          const combinedHtml = buildCombined80mmPdfHTML(
+            items,
+            total,
+            orderNumber,
+            customerName,
+            dateStr,
+            paymentMethodLabel
+          );
+          printViaBrowser(combinedHtml, "Comanda + Ticket 80mm");
+          toast.success("PDF 80mm generado con ambos tickets");
         } catch (error) {
           console.error("Error en impresión combinada:", error);
           toast.error("Error en impresión combinada");
@@ -697,7 +788,7 @@ export function useBluetootPrinter() {
 
       await enqueuePrintJob(printJob);
     },
-    [printKitchenOrder, printClientTicket, enqueuePrintJob]
+    [enqueuePrintJob]
   );
 
   // Imprimir ambos documentos (cliente y cocina)

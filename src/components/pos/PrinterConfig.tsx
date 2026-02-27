@@ -20,10 +20,8 @@ import {
 import { Bluetooth, Printer, RefreshCw, TestTube, Trash2, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
-import { printToCups, printToDevice, printViaBrowser } from "@/lib/printer-formats";
+import { printToDevice, printViaBrowser } from "@/lib/printer-formats";
 import type { PrinterDevice } from "@/types/printer";
-
-const CUPS_PRINTER_URL = import.meta.env.VITE_CUPS_PRINTER_URL?.trim();
 
 export function PrinterConfig() {
   const [open, setOpen] = useState(false);
@@ -120,26 +118,6 @@ export function PrinterConfig() {
             return;
           } catch (error) {
             console.error("Error de prueba por Bluetooth:", error);
-            if (!preferences.fallbackToWeb && !CUPS_PRINTER_URL) {
-              throw error;
-            }
-          }
-        }
-
-        if (CUPS_PRINTER_URL) {
-          try {
-            await printToCups(testHtml, CUPS_PRINTER_URL, printer.type, {
-              printerId: printer.id || printer.address,
-              ip: printer.ip,
-              port: printer.port,
-            }, {
-              openDrawer: printer.type === "80mm" ? preferences.openDrawerOn80mm : false,
-              fullCut: true,
-            });
-            toast.success(`Prueba enviada a ${printer.name}`, { id: toastId });
-            return;
-          } catch (error) {
-            console.error("Error de prueba por CUPS:", error);
             if (!preferences.fallbackToWeb) {
               throw error;
             }
