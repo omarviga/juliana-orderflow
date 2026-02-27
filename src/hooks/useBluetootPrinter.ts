@@ -6,15 +6,8 @@ import {
   generateClientTicketHTML,
   generateCashCutTicketHTML,
   generateKitchenOrderHTML,
-  printToDevice,
   printViaBrowser,
 } from "@/lib/printer-formats";
-import {
-  isPrintGatewayConfigured,
-  printCashCutViaGateway,
-  printKitchenViaGateway,
-  printTicketViaGateway,
-} from "@/lib/print-gateway";
 import type { CartItem } from "@/types/pos";
 import type { CashRegisterSale } from "@/lib/cash-register";
 
@@ -37,7 +30,7 @@ interface PrinterPreferences {
 const STORAGE_KEY = "printerPreferences";
 const DEFAULT_PREFERENCES: PrinterPreferences = {
   autoPrint: true,
-  useBluetoothIfAvailable: true,
+  useBluetoothIfAvailable: false,
   fallbackToWeb: true,
   openDrawerOn80mm: true,
   fullCutOn80mm: true,
@@ -209,50 +202,7 @@ export function useBluetootPrinter() {
             paymentMethodLabel
           );
 
-          if (isPrintGatewayConfigured()) {
-            const sent = await printTicketViaGateway({
-              orderNumber,
-              customerName,
-              paymentMethodLabel,
-              total,
-              items: items.map((item) => ({
-                quantity: item.quantity,
-                subtotal: item.subtotal,
-                product: { name: item.product.name },
-                productSize: item.productSize ? { name: item.productSize.name } : null,
-                customLabel: item.customLabel || null,
-              })),
-              dateStr,
-            });
-            if (sent) {
-              toast.success("Ticket enviado a impresora");
-              return;
-            }
-          }
-
-          if (
-            preferences.useBluetoothIfAvailable &&
-            preferences.clientPrinter80mm
-          ) {
-            try {
-              await printToDevice(
-                preferences.clientPrinter80mm.address,
-                htmlContent,
-                "80mm",
-                {
-                  openDrawer: preferences.openDrawerOn80mm,
-                  fullCut: preferences.fullCutOn80mm,
-                }
-              );
-              toast.success("Ticket impreso en cliente");
-              return;
-            } catch (error) {
-              console.error("Error Bluetooth:", error);
-              if (!preferences.fallbackToWeb) throw error;
-            }
-          }
-
-          // Fallback a impresión web
+          // Imprimir vía navegador (PDF/diálogo del sistema)
           printViaBrowser(htmlContent, "Ticket Cliente");
           toast.success("Ticket listo para imprimir");
         } catch (error) {
@@ -278,49 +228,6 @@ export function useBluetootPrinter() {
       const printJob = async () => {
         try {
           const htmlContent = generateCashCutTicketHTML(sales, generatedAt, title, countSummary, details);
-
-          if (isPrintGatewayConfigured()) {
-            const entries = (countSummary?.entries || []).map((entry) => ({
-              label: entry.label,
-              value: entry.value,
-              quantity: entry.quantity,
-            }));
-            const sent = await printCashCutViaGateway({
-              title,
-              generatedAt,
-              salesCount: sales.length,
-              expectedCash: countSummary?.expectedCash || 0,
-              countedCash: countSummary?.countedCash || 0,
-              difference: countSummary?.difference || 0,
-              entries,
-            });
-            if (sent) {
-              toast.success("Corte de caja enviado a impresora");
-              return;
-            }
-          }
-
-          if (
-            preferences.useBluetoothIfAvailable &&
-            preferences.clientPrinter80mm
-          ) {
-            try {
-              await printToDevice(
-                preferences.clientPrinter80mm.address,
-                htmlContent,
-                "80mm",
-                {
-                  openDrawer: preferences.openDrawerOn80mm,
-                  fullCut: preferences.fullCutOn80mm,
-                }
-              );
-              toast.success("Corte de caja impreso");
-              return;
-            } catch (error) {
-              console.error("Error Bluetooth en corte de caja:", error);
-              if (!preferences.fallbackToWeb) throw error;
-            }
-          }
 
           printViaBrowser(htmlContent, title);
           toast.success("Corte de caja listo para imprimir");
@@ -353,43 +260,7 @@ export function useBluetootPrinter() {
             dateStr
           );
 
-          if (isPrintGatewayConfigured()) {
-            const sent = await printKitchenViaGateway({
-              orderNumber,
-              customerName,
-              items: items.map((item) => ({
-                quantity: item.quantity,
-                product: { name: item.product.name },
-                productSize: item.productSize ? { name: item.productSize.name } : null,
-                customLabel: item.customLabel || null,
-              })),
-              dateStr,
-            });
-            if (sent) {
-              toast.success("Comanda enviada a impresora");
-              return;
-            }
-          }
-
-          if (
-            preferences.useBluetoothIfAvailable &&
-            preferences.kitchenPrinter58mm
-          ) {
-            try {
-              await printToDevice(
-                preferences.kitchenPrinter58mm.address,
-                htmlContent,
-                "58mm"
-              );
-              toast.success("Comanda enviada a cocina");
-              return;
-            } catch (error) {
-              console.error("Error Bluetooth:", error);
-              if (!preferences.fallbackToWeb) throw error;
-            }
-          }
-
-          // Fallback a impresión web
+          // Imprimir vía navegador (PDF/diálogo del sistema)
           printViaBrowser(htmlContent, "Comanda Cocina");
           toast.success("Comanda lista para imprimir");
         } catch (error) {

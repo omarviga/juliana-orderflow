@@ -12,11 +12,9 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Bluetooth, Trash2, Plus } from "lucide-react";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
-import { isPrintGatewayConfigured } from "@/lib/print-gateway";
 
 export function PrinterConfig() {
   const [open, setOpen] = useState(false);
-  const useGateway = isPrintGatewayConfigured();
   const {
     preferences,
     savePreferences,
@@ -78,16 +76,9 @@ export function PrinterConfig() {
         </DialogHeader>
 
         <div className="space-y-6">
-          {useGateway && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-              Impresión activa por servidor (Print Gateway). No necesitas emparejar Bluetooth en este
-              dispositivo.
-            </div>
-          )}
 
           {/* Impresora 80mm */}
-          {!useGateway && (
-            <div className="rounded-lg border p-4">
+          <div className="rounded-lg border p-4">
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h3 className="font-semibold text-foreground">Impresora Cliente (80mm)</h3>
@@ -127,11 +118,9 @@ export function PrinterConfig() {
               </Button>
             )}
           </div>
-          )}
 
           {/* Impresora 58mm */}
-          {!useGateway && (
-            <div className="rounded-lg border p-4">
+          <div className="rounded-lg border p-4">
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h3 className="font-semibold text-foreground">Impresora Cocina (58mm)</h3>
@@ -171,7 +160,6 @@ export function PrinterConfig() {
               </Button>
             )}
           </div>
-          )}
 
           {/* Opciones */}
           <div className="space-y-4 border-t pt-4">
@@ -188,35 +176,31 @@ export function PrinterConfig() {
 
             {preferences.autoPrint && (
               <p className="text-xs text-muted-foreground">
-                Se imprimirán ambos tickets automáticamente al confirmar el pago
+                Se imprimirá un solo ticket automáticamente al confirmar el pago
               </p>
             )}
 
-            {!useGateway && (
-              <>
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="use-bluetooth" className="font-medium text-foreground">
-                    Usar Bluetooth
-                  </Label>
-                  <Switch
-                    id="use-bluetooth"
-                    checked={preferences.useBluetoothIfAvailable}
-                    onCheckedChange={handleToggleBluetooth}
-                  />
-                </div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="use-bluetooth" className="font-medium text-foreground">
+                Usar Bluetooth
+              </Label>
+              <Switch
+                id="use-bluetooth"
+                checked={preferences.useBluetoothIfAvailable}
+                onCheckedChange={handleToggleBluetooth}
+              />
+            </div>
 
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="fallback" className="font-medium text-foreground">
-                    Fallback a navegador
-                  </Label>
-                  <Switch
-                    id="fallback"
-                    checked={preferences.fallbackToWeb}
-                    onCheckedChange={handleToggleFallback}
-                  />
-                </div>
-              </>
-            )}
+            <div className="flex items-center justify-between">
+              <Label htmlFor="fallback" className="font-medium text-foreground">
+                Fallback a navegador
+              </Label>
+              <Switch
+                id="fallback"
+                checked={preferences.fallbackToWeb}
+                onCheckedChange={handleToggleFallback}
+              />
+            </div>
 
             <div className="flex items-center justify-between">
               <Label htmlFor="open-drawer-80" className="font-medium text-foreground">

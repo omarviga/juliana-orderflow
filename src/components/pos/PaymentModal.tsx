@@ -14,7 +14,6 @@ import { Printer, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
 import { useBluetoothPrintApp } from "@/hooks/useBluetoothPrintApp";
-import { isPrintGatewayConfigured } from "@/lib/print-gateway";
 import {
   getPaymentMethodLabel,
   registerPaidSale,
@@ -70,7 +69,6 @@ export function PaymentModal({
 
   const printer = useBluetootPrinter();
   const printApp = useBluetoothPrintApp();
-  const usePrintGateway = isPrintGatewayConfigured();
   const quickNames = ["Barra", "Para llevar"];
 
   useEffect(() => {
@@ -237,19 +235,16 @@ export function PaymentModal({
       if (printer.preferences.autoPrint) {
         setIsAutoPrinting(true);
         try {
-          // Intentar con Bluetooth Print App primero (más confiable)
-          let printedWithApp = false;
-
-          if (!usePrintGateway && printApp.isBluetoothPrintAppAvailable()) {
-            printedWithApp = await printApp.printClientTicket(
+          let printed = false;
+          if (printApp.isBluetoothPrintAppAvailable()) {
+            printed = await printApp.printClientTicket(
               items,
               total,
               order.order_number,
               normalizedCustomerName
             );
           }
-
-          if (!printedWithApp) {
+          if (!printed) {
             await printWithWebFallback("cliente", order.order_number, normalizedCustomerName);
           }
         } catch (err) {
@@ -286,19 +281,16 @@ export function PaymentModal({
   const printTicket = async (type: "cliente" | "cocina") => {
     setIsAutoPrinting(true);
     try {
-      // Intentar con Bluetooth Print App primero (más confiable)
-      let printedWithApp = false;
-
-      if (!usePrintGateway && printApp.isBluetoothPrintAppAvailable()) {
-        printedWithApp =
-          type === "cliente"
-            ? await printApp.printClientTicket(items, total, savedOrderNumber, customerName)
-            : await printApp.printKitchenOrder(items, savedOrderNumber, customerName);
+      if (type === "cliente" && printApp.isBluetoothPrintAppAvailable()) {
+        const printed = await printApp.printClientTicket(
+          items,
+          total,
+          savedOrderNumber,
+          customerName
+        );
+        if (printed) return;
       }
-
-      if (!printedWithApp) {
-        await printWithWebFallback(type, savedOrderNumber, customerName);
-      }
+      await printWithWebFallback(type, savedOrderNumber, customerName);
     } catch (err) {
       console.error("Error al imprimir:", err);
       toast.error("Error al imprimir");
