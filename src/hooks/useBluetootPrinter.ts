@@ -22,7 +22,7 @@ const AVAILABLE_PRINTERS_KEY = "availablePrinters";
 const CUPS_PRINTER_URL = import.meta.env.VITE_CUPS_PRINTER_URL?.trim();
 const REQUIRE_SERVER_PRINT = import.meta.env.VITE_REQUIRE_SERVER_PRINT === "true";
 const FIXED_CLIENT_PRINTER_ID = "GLPrinter_80mm";
-const FIXED_KITCHEN_PRINTER_ID = "GLPrinter_80mm";
+const FIXED_KITCHEN_PRINTER_ID = "GLPrinter_58mm";
 const FIXED_CLIENT_PRINTER: PrinterDevice = {
   id: FIXED_CLIENT_PRINTER_ID,
   address: FIXED_CLIENT_PRINTER_ID,
@@ -33,8 +33,8 @@ const FIXED_CLIENT_PRINTER: PrinterDevice = {
 const FIXED_KITCHEN_PRINTER: PrinterDevice = {
   id: FIXED_KITCHEN_PRINTER_ID,
   address: FIXED_KITCHEN_PRINTER_ID,
-  name: "GLPrinter_80mm",
-  type: "80mm",
+  name: "GLPrinter_58mm",
+  type: "58mm",
   status: "connected",
 };
 const DEFAULT_PREFERENCES: PrinterPreferences = {
@@ -485,7 +485,11 @@ export function useBluetootPrinter() {
 
       if (CUPS_PRINTER_URL) {
         try {
-          await printToCups(htmlContent, CUPS_PRINTER_URL, printerSize);
+          await printToCups(htmlContent, CUPS_PRINTER_URL, printerSize, {
+            printerId: preferredPrinter?.id || preferredPrinter?.address,
+            ip: preferredPrinter?.ip,
+            port: preferredPrinter?.port,
+          });
           toast.success(`${title} enviado a CUPS`);
           return;
         } catch (error) {
@@ -748,8 +752,16 @@ export function useBluetootPrinter() {
 
         if (CUPS_PRINTER_URL) {
           try {
-            await printToCups(kitchenHtml, CUPS_PRINTER_URL, kitchenPrinter?.type || "58mm");
-            await printToCups(clientHtml, CUPS_PRINTER_URL, clientPrinter?.type || "80mm");
+            await printToCups(kitchenHtml, CUPS_PRINTER_URL, kitchenPrinter?.type || "58mm", {
+              printerId: kitchenPrinter?.id || kitchenPrinter?.address,
+              ip: kitchenPrinter?.ip,
+              port: kitchenPrinter?.port,
+            });
+            await printToCups(clientHtml, CUPS_PRINTER_URL, clientPrinter?.type || "80mm", {
+              printerId: clientPrinter?.id || clientPrinter?.address,
+              ip: clientPrinter?.ip,
+              port: clientPrinter?.port,
+            });
             toast.success("Comanda y ticket enviados por CUPS");
             return;
           } catch (error) {

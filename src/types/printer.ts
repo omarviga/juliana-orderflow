@@ -4,6 +4,8 @@ export interface PrinterDevice {
   name: string;
   id: string;
   type?: '80mm' | '58mm' | null;  // null significa sin asignar
+  ip?: string;
+  port?: number;
   lastUsed?: Date;
   status?: 'connected' | 'disconnected' | 'pairing';
 }

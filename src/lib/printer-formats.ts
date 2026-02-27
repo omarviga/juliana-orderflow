@@ -953,11 +953,27 @@ function htmlToPlainText(htmlContent: string): string {
 export async function printToCups(
   htmlContent: string,
   printerUrl: string,
-  printerSize: "80mm" | "58mm" = "80mm"
+  printerSize: "80mm" | "58mm" = "80mm",
+  printerMeta?: {
+    printerId?: string;
+    ip?: string;
+    port?: number;
+  }
 ): Promise<void> {
+  const printerType = printerSize === "80mm" ? "client" : "kitchen";
   const payload = htmlToPlainText(htmlContent);
   const lines = payload.split("\n").filter((line) => line.trim().length > 0);
   const errors: string[] = [];
+  let fallbackIp: string | undefined;
+  let fallbackPort: number | undefined;
+
+  try {
+    const parsed = new URL(printerUrl);
+    fallbackIp = parsed.hostname || undefined;
+    fallbackPort = parsed.port ? Number(parsed.port) : undefined;
+  } catch {
+    // URL inválida: usar solo metadatos provistos.
+  }
 
   const tryRequest = async (url: string, init: RequestInit, label: string) => {
     const response = await fetch(url, init);
@@ -1031,7 +1047,11 @@ export async function printToCups(
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            type: printerSize === "58mm" ? "kitchen" : "client",
+            type: printerType,
+            paperSize: printerSize,
+            printerId: printerMeta?.printerId,
+            ip: printerMeta?.ip || fallbackIp,
+            port: printerMeta?.port || fallbackPort || 9100,
             lines,
           }),
         },

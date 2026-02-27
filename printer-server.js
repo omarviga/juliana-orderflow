@@ -290,28 +290,48 @@ app.get("/", (req, res) => {
   });
 });
 
-// Endpoint rápido: imprime directo por CUPS/lp a la 80mm
+function resolveTicketType({ type, paperSize }) {
+  if (paperSize === "58mm") return "kitchen";
+  if (paperSize === "80mm") return "client";
+  return type === "kitchen" ? "kitchen" : "client";
+}
+
+function resolveDestination({ normalizedType, printerId }) {
+  const safePrinterId = typeof printerId === "string" ? printerId.trim() : "";
+  const knownPrinters = new Set([PRINTER_80MM_NAME, PRINTER_58MM_NAME]);
+  if (safePrinterId && knownPrinters.has(safePrinterId)) {
+    return safePrinterId;
+  }
+  return normalizedType === "kitchen" ? PRINTER_58MM_NAME : PRINTER_80MM_NAME;
+}
+
+// Endpoint rápido: imprime directo por CUPS/lp
 // Body:
 // {
 //   "type": "client" | "kitchen",
+//   "paperSize": "80mm" | "58mm", // opcional (prioridad sobre type)
+//   "printerId": "NombreColaCUPS", // opcional
+//   "ip": "x.x.x.x", // opcional (metadato)
+//   "port": 9100, // opcional (metadato)
 //   "lines": ["texto 1", "texto 2"], // opcional
 //   "payload": { ... } // opcional, para generar líneas automáticamente
 // }
 app.post("/api/print-ticket", async (req, res) => {
-  const { type = "client", lines, payload = {} } = req.body || {};
-  const destination = type === "kitchen" ? PRINTER_58MM_NAME : PRINTER_80MM_NAME;
+  const { type = "client", paperSize, printerId, ip, port, lines, payload = {} } = req.body || {};
+  const normalizedType = resolveTicketType({ type, paperSize });
+  const destination = resolveDestination({ normalizedType, printerId });
 
   let printableLines = [];
   if (Array.isArray(lines) && lines.length > 0) {
     printableLines = lines.map((line) => String(line));
-  } else if (type === "kitchen") {
+  } else if (normalizedType === "kitchen") {
     printableLines = getPrintableKitchenLines(payload);
   } else {
     printableLines = getPrintableTicketLines(payload, { includeBusinessHeader: true });
   }
 
   const text = `${printableLines.join("\n")}\n\n\n`;
-  const title = type === "kitchen" ? "Comanda Cocina" : "Ticket Cliente";
+  const title = normalizedType === "kitchen" ? "Comanda Cocina" : "Ticket Cliente";
 
   try {
     const result = await printWithLp({
@@ -323,7 +343,11 @@ app.post("/api/print-ticket", async (req, res) => {
     res.json({
       ok: true,
       printer: destination,
-      type,
+      type: normalizedType,
+      paperSize: paperSize || (normalizedType === "kitchen" ? "58mm" : "80mm"),
+      printerId: printerId || null,
+      ip: ip || null,
+      port: port || null,
       output: result.stdout || "enviado",
     });
   } catch (error) {
@@ -331,6 +355,8 @@ app.post("/api/print-ticket", async (req, res) => {
     res.status(500).json({
       ok: false,
       printer: destination,
+      type: normalizedType,
+      paperSize: paperSize || (normalizedType === "kitchen" ? "58mm" : "80mm"),
       error: error instanceof Error ? error.message : "Error desconocido",
     });
   }
