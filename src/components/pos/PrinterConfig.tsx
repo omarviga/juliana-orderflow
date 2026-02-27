@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,19 +10,38 @@ import {
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Bluetooth, Trash2, Plus } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Bluetooth, Printer, RefreshCw, Trash2 } from "lucide-react";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
 
 export function PrinterConfig() {
   const [open, setOpen] = useState(false);
   const {
     preferences,
+    availablePrinters,
+    isScanning,
+    scanForPrinters,
+    assignPrinterType,
+    getClientPrinter,
+    getKitchenPrinter,
+    removePrinter,
     savePreferences,
-    pairClientPrinter,
-    pairKitchenPrinter,
-    unpairClientPrinter,
-    unpairKitchenPrinter,
   } = useBluetootPrinter();
+
+  const clientPrinter = getClientPrinter();
+  const kitchenPrinter = getKitchenPrinter();
+
+  useEffect(() => {
+    if (open) {
+      void scanForPrinters();
+    }
+  }, [open, scanForPrinters]);
 
   const handleToggleAutoPrint = () => {
     savePreferences({
@@ -65,106 +84,119 @@ export function PrinterConfig() {
         <Button variant="outline" size="sm" className="gap-2">
           <Bluetooth className="h-4 w-4" />
           Impresoras
+          {(clientPrinter || kitchenPrinter) && (
+            <span className="ml-1 h-2 w-2 rounded-full bg-green-500" />
+          )}
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Configurar Impresoras</DialogTitle>
           <DialogDescription>
-            Configura tus impresoras Bluetooth y opciones de impresión
+            Escanea y configura tus impresoras Bluetooth
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
-
-          {/* Impresora 80mm */}
-          <div className="rounded-lg border p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-foreground">Impresora Cliente (80mm)</h3>
-                <p className="text-sm text-muted-foreground">Para tickets del cliente</p>
-              </div>
-              {preferences.clientPrinter80mm && (
-                <div className="text-xs rounded-full bg-green-100 px-2 py-1 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                  ✓ Conectada
-                </div>
-              )}
-            </div>
-
-            {preferences.clientPrinter80mm ? (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  {preferences.clientPrinter80mm.name}
-                </p>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="w-full gap-2"
-                  onClick={unpairClientPrinter}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Desemparejar
-                </Button>
-              </div>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full gap-2"
-                onClick={pairClientPrinter}
-              >
-                <Plus className="h-4 w-4" />
-                Emparejar Impresora
-              </Button>
-            )}
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium">Impresoras disponibles</h3>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void scanForPrinters()}
+              disabled={isScanning}
+              className="gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${isScanning ? "animate-spin" : ""}`} />
+              {isScanning ? "Escaneando..." : "Escanear"}
+            </Button>
           </div>
 
-          {/* Impresora 58mm */}
-          <div className="rounded-lg border p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-foreground">Impresora Cocina (58mm)</h3>
-                <p className="text-sm text-muted-foreground">Para comandas de cocina</p>
+          <div className="space-y-2">
+            {availablePrinters.length === 0 && !isScanning && (
+              <div className="py-8 text-center text-muted-foreground">
+                <Printer className="mx-auto mb-2 h-12 w-12 opacity-50" />
+                <p>No se encontraron impresoras</p>
+                <p className="text-sm">Asegurate de que esten encendidas y en modo pairing</p>
               </div>
-              {preferences.kitchenPrinter58mm && (
-                <div className="text-xs rounded-full bg-green-100 px-2 py-1 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                  ✓ Conectada
-                </div>
-              )}
-            </div>
-
-            {preferences.kitchenPrinter58mm ? (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  {preferences.kitchenPrinter58mm.name}
-                </p>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="w-full gap-2"
-                  onClick={unpairKitchenPrinter}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Desemparejar
-                </Button>
-              </div>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full gap-2"
-                onClick={pairKitchenPrinter}
-              >
-                <Plus className="h-4 w-4" />
-                Emparejar Impresora
-              </Button>
             )}
+
+            {availablePrinters.map((printer) => (
+              <div
+                key={printer.address}
+                className="flex items-start gap-4 rounded-lg border bg-card p-3"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <Printer className="h-4 w-4" />
+                    <span className="font-medium">{printer.name}</span>
+                    {printer.type && (
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs">
+                        {printer.type === "80mm" ? "Cliente" : "Cocina"}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 font-mono text-xs text-muted-foreground">{printer.address}</p>
+
+                  <div className="mt-2 flex items-center gap-2">
+                    <Select
+                      value={printer.type ?? "none"}
+                      onValueChange={(value) =>
+                        assignPrinterType(
+                          printer.address,
+                          value === "none" ? null : (value as "80mm" | "58mm")
+                        )
+                      }
+                    >
+                      <SelectTrigger className="h-8 w-[180px] text-xs">
+                        <SelectValue placeholder="Asignar como..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="80mm">Cliente (80mm)</SelectItem>
+                        <SelectItem value="58mm">Cocina (58mm)</SelectItem>
+                        <SelectItem value="none">Sin asignar</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2"
+                      onClick={() => removePrinter(printer.address)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
 
-          {/* Opciones */}
+          {(clientPrinter || kitchenPrinter) && (
+            <div className="rounded-lg border bg-muted/50 p-4">
+              <h4 className="mb-2 text-sm font-medium">Asignaciones actuales</h4>
+              <div className="space-y-2 text-sm">
+                {clientPrinter && (
+                  <div className="flex items-center justify-between">
+                    <span>Cliente (80mm):</span>
+                    <span className="font-mono text-xs">{clientPrinter.name}</span>
+                  </div>
+                )}
+                {kitchenPrinter && (
+                  <div className="flex items-center justify-between">
+                    <span>Cocina (58mm):</span>
+                    <span className="font-mono text-xs">{kitchenPrinter.name}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="space-y-4 border-t pt-4">
+            <h4 className="text-sm font-medium">Opciones de impresion</h4>
+
             <div className="flex items-center justify-between">
-              <Label htmlFor="auto-print" className="font-medium text-foreground">
+              <Label htmlFor="auto-print" className="font-medium">
                 Impresión automática
               </Label>
               <Switch
@@ -174,14 +206,8 @@ export function PrinterConfig() {
               />
             </div>
 
-            {preferences.autoPrint && (
-              <p className="text-xs text-muted-foreground">
-                Se imprimirá un solo ticket automáticamente al confirmar el pago
-              </p>
-            )}
-
             <div className="flex items-center justify-between">
-              <Label htmlFor="use-bluetooth" className="font-medium text-foreground">
+              <Label htmlFor="use-bluetooth" className="font-medium">
                 Usar Bluetooth
               </Label>
               <Switch
@@ -192,7 +218,7 @@ export function PrinterConfig() {
             </div>
 
             <div className="flex items-center justify-between">
-              <Label htmlFor="fallback" className="font-medium text-foreground">
+              <Label htmlFor="fallback" className="font-medium">
                 Fallback a navegador
               </Label>
               <Switch
@@ -202,27 +228,31 @@ export function PrinterConfig() {
               />
             </div>
 
-            <div className="flex items-center justify-between">
-              <Label htmlFor="open-drawer-80" className="font-medium text-foreground">
-                Abrir cajon en 80mm
-              </Label>
-              <Switch
-                id="open-drawer-80"
-                checked={preferences.openDrawerOn80mm}
-                onCheckedChange={handleToggleOpenDrawer80mm}
-              />
-            </div>
+            {clientPrinter && (
+              <>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="open-drawer-80" className="font-medium">
+                    Abrir cajon en 80mm
+                  </Label>
+                  <Switch
+                    id="open-drawer-80"
+                    checked={preferences.openDrawerOn80mm}
+                    onCheckedChange={handleToggleOpenDrawer80mm}
+                  />
+                </div>
 
-            <div className="flex items-center justify-between">
-              <Label htmlFor="full-cut-80" className="font-medium text-foreground">
-                Corte completo en 80mm
-              </Label>
-              <Switch
-                id="full-cut-80"
-                checked={preferences.fullCutOn80mm}
-                onCheckedChange={handleToggleFullCut80mm}
-              />
-            </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="full-cut-80" className="font-medium">
+                    Corte completo en 80mm
+                  </Label>
+                  <Switch
+                    id="full-cut-80"
+                    checked={preferences.fullCutOn80mm}
+                    onCheckedChange={handleToggleFullCut80mm}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
       </DialogContent>

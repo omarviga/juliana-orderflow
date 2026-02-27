@@ -11,30 +11,18 @@ import {
   printToDevice,
   printViaBrowser,
 } from "@/lib/printer-formats";
+import type { PrinterDevice, PrinterPreferences } from "@/types/printer";
 import type { CartItem } from "@/types/pos";
 import type { CashRegisterSale } from "@/lib/cash-register";
-
-interface PrinterDevice {
-  address: string;
-  name: string;
-  lastUsed?: Date;
-}
-
-interface PrinterPreferences {
-  clientPrinter80mm?: PrinterDevice;
-  kitchenPrinter58mm?: PrinterDevice;
-  autoPrint: boolean;
-  useBluetoothIfAvailable: boolean;
-  fallbackToWeb: boolean;
-  openDrawerOn80mm: boolean;
-  fullCutOn80mm: boolean;
-}
 
 const STORAGE_KEY = "printerPreferences";
 const CUPS_PRINTER_URL = import.meta.env.VITE_CUPS_PRINTER_URL?.trim();
 const DEFAULT_PREFERENCES: PrinterPreferences = {
+  printers: {},
+  clientPrinterId: undefined,
+  kitchenPrinterId: undefined,
   autoPrint: true,
-  useBluetoothIfAvailable: false,
+  useBluetoothIfAvailable: true,
   fallbackToWeb: true,
   openDrawerOn80mm: true,
   fullCutOn80mm: true,
@@ -46,13 +34,46 @@ export function useBluetootPrinter() {
     if (!stored) return DEFAULT_PREFERENCES;
 
     try {
-      const parsed = JSON.parse(stored) as Partial<PrinterPreferences>;
-      return { ...DEFAULT_PREFERENCES, ...parsed };
+      const parsed = JSON.parse(stored) as Partial<PrinterPreferences> & {
+        clientPrinter80mm?: PrinterDevice;
+        kitchenPrinter58mm?: PrinterDevice;
+      };
+      const migratedPrinters = { ...(parsed.printers || {}) };
+
+      if (parsed.clientPrinter80mm?.address) {
+        migratedPrinters[parsed.clientPrinter80mm.address] = {
+          id: parsed.clientPrinter80mm.address,
+          type: "80mm",
+          status: "disconnected",
+          ...parsed.clientPrinter80mm,
+        };
+      }
+
+      if (parsed.kitchenPrinter58mm?.address) {
+        migratedPrinters[parsed.kitchenPrinter58mm.address] = {
+          id: parsed.kitchenPrinter58mm.address,
+          type: "58mm",
+          status: "disconnected",
+          ...parsed.kitchenPrinter58mm,
+        };
+      }
+
+      return {
+        ...DEFAULT_PREFERENCES,
+        ...parsed,
+        printers: migratedPrinters,
+        clientPrinterId:
+          parsed.clientPrinterId || parsed.clientPrinter80mm?.address || DEFAULT_PREFERENCES.clientPrinterId,
+        kitchenPrinterId:
+          parsed.kitchenPrinterId || parsed.kitchenPrinter58mm?.address || DEFAULT_PREFERENCES.kitchenPrinterId,
+      };
     } catch {
       return DEFAULT_PREFERENCES;
     }
   });
 
+  const [availablePrinters, setAvailablePrinters] = useState<PrinterDevice[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [printQueue, setPrintQueue] = useState<Array<() => Promise<void>>>([]);
 
@@ -79,99 +100,157 @@ export function useBluetootPrinter() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
   }, []);
 
-  // Emparejar impresora 80mm (cliente)
+  // Escanear impresoras Bluetooth disponibles
+  const scanForPrinters = useCallback(async () => {
+    if (!navigator.bluetooth) {
+      toast.error("Web Bluetooth no disponible");
+      return undefined;
+    }
+
+    setIsScanning(true);
+
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: ["00001101-0000-1000-8000-00805f9b34fb"],
+      });
+
+      const existingPrinter = Object.values(preferences.printers).find(
+        (p) => p.address === device.id
+      );
+
+      const newPrinter: PrinterDevice = {
+        address: device.id,
+        name: device.name || "Impresora Bluetooth",
+        id: device.id,
+        type: existingPrinter?.type || null,
+        status: "disconnected",
+        lastUsed: new Date(),
+      };
+
+      setAvailablePrinters((prev) => {
+        const exists = prev.some((p) => p.address === device.id);
+        if (exists) return prev;
+        return [...prev, newPrinter];
+      });
+
+      if (!existingPrinter) {
+        const newPrefs: PrinterPreferences = {
+          ...preferences,
+          printers: {
+            ...preferences.printers,
+            [newPrinter.id]: newPrinter,
+          },
+        };
+        savePreferences(newPrefs);
+      }
+
+      return newPrinter;
+    } catch (error) {
+      if (error instanceof Error && !error.message.includes("User cancelled")) {
+        console.error("Error scanning:", error);
+        toast.error("Error al escanear impresoras");
+      }
+      return undefined;
+    } finally {
+      setIsScanning(false);
+    }
+  }, [preferences, savePreferences]);
+
+  // Asignar tipo a una impresora
+  const assignPrinterType = useCallback((printerId: string, type: "80mm" | "58mm" | null) => {
+    setPreferences((prev) => {
+      const updatedPrinters = { ...prev.printers };
+
+      if (type) {
+        Object.keys(updatedPrinters).forEach((key) => {
+          if (updatedPrinters[key].type === type) {
+            updatedPrinters[key] = { ...updatedPrinters[key], type: null };
+          }
+        });
+      }
+
+      if (updatedPrinters[printerId]) {
+        updatedPrinters[printerId] = {
+          ...updatedPrinters[printerId],
+          type,
+        };
+      }
+
+      const newPrefs: PrinterPreferences = {
+        ...prev,
+        printers: updatedPrinters,
+        clientPrinterId: type === "80mm" ? printerId : prev.clientPrinterId,
+        kitchenPrinterId: type === "58mm" ? printerId : prev.kitchenPrinterId,
+      };
+
+      if (type === null && prev.clientPrinterId === printerId) {
+        newPrefs.clientPrinterId = undefined;
+      }
+      if (type === null && prev.kitchenPrinterId === printerId) {
+        newPrefs.kitchenPrinterId = undefined;
+      }
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
+      return newPrefs;
+    });
+  }, []);
+
+  // Obtener impresora asignada a cliente (80mm)
+  const getClientPrinter = useCallback((): PrinterDevice | undefined => {
+    return preferences.clientPrinterId
+      ? preferences.printers[preferences.clientPrinterId]
+      : undefined;
+  }, [preferences]);
+
+  // Obtener impresora asignada a cocina (58mm)
+  const getKitchenPrinter = useCallback((): PrinterDevice | undefined => {
+    return preferences.kitchenPrinterId
+      ? preferences.printers[preferences.kitchenPrinterId]
+      : undefined;
+  }, [preferences]);
+
+  // Eliminar impresora
+  const removePrinter = useCallback((printerId: string) => {
+    setPreferences((prev) => {
+      const updatedPrinters = { ...prev.printers };
+      delete updatedPrinters[printerId];
+
+      const newPrefs: PrinterPreferences = {
+        ...prev,
+        printers: updatedPrinters,
+      };
+
+      if (prev.clientPrinterId === printerId) {
+        newPrefs.clientPrinterId = undefined;
+      }
+      if (prev.kitchenPrinterId === printerId) {
+        newPrefs.kitchenPrinterId = undefined;
+      }
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
+      return newPrefs;
+    });
+
+    setAvailablePrinters((prev) => prev.filter((p) => p.id !== printerId));
+  }, []);
+
+  // Compatibilidad con UI existente
   const pairClientPrinter = useCallback(async () => {
-    try {
-      if (!navigator.bluetooth) {
-        toast.error("Web Bluetooth no disponible en este navegador");
-        return false;
-      }
+    const printer = await scanForPrinters();
+    if (!printer) return false;
+    assignPrinterType(printer.id, "80mm");
+    toast.success(`Impresora "${printer.name}" asignada a cliente`);
+    return true;
+  }, [assignPrinterType, scanForPrinters]);
 
-      toast.loading("Buscando impresoras...");
-
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }],
-        optionalServices: ["00001101-0000-1000-8000-00805f9b34fb", "0000180a-0000-1000-8000-00805f9b34fb"],
-      });
-
-      if (!device) return false;
-
-      const newPrefs = {
-        ...preferences,
-        clientPrinter80mm: {
-          address: device.id,
-          name: device.name || "Impresora 80mm",
-        },
-      };
-
-      savePreferences(newPrefs);
-      toast.success(`Impresora "${device.name}" emparejada correctamente`);
-      return true;
-    } catch (error) {
-      console.error("Error al emparejar impresora:", error);
-      if (error instanceof Error) {
-        if (error.message.includes("User cancelled")) {
-          toast.info("Emparejamiento cancelado");
-        } else if (error.message.includes("NotFoundError")) {
-          toast.error("No se encontraron impresoras. Verifica que esté encendida");
-        } else if (error.message.includes("NotAllowedError")) {
-          toast.error("Permiso denegado. Revisa los permisos de Bluetooth");
-        } else {
-          toast.error(`Error: ${error.message}`);
-        }
-      } else {
-        toast.error("Error desconocido al emparejar impresora");
-      }
-      return false;
-    }
-  }, [preferences, savePreferences]);
-
-  // Emparejar impresora 58mm (cocina)
   const pairKitchenPrinter = useCallback(async () => {
-    try {
-      if (!navigator.bluetooth) {
-        toast.error("Web Bluetooth no disponible en este navegador");
-        return false;
-      }
-
-      toast.loading("Buscando impresoras...");
-
-      const device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }],
-        optionalServices: ["00001101-0000-1000-8000-00805f9b34fb", "0000180a-0000-1000-8000-00805f9b34fb"],
-      });
-
-      if (!device) return false;
-
-      const newPrefs = {
-        ...preferences,
-        kitchenPrinter58mm: {
-          address: device.id,
-          name: device.name || "Impresora 58mm",
-        },
-      };
-
-      savePreferences(newPrefs);
-      toast.success(`Impresora "${device.name}" emparejada correctamente`);
-      return true;
-    } catch (error) {
-      console.error("Error al emparejar impresora:", error);
-      if (error instanceof Error) {
-        if (error.message.includes("User cancelled")) {
-          toast.info("Emparejamiento cancelado");
-        } else if (error.message.includes("NotFoundError")) {
-          toast.error("No se encontraron impresoras. Verifica que esté encendida");
-        } else if (error.message.includes("NotAllowedError")) {
-          toast.error("Permiso denegado. Revisa los permisos de Bluetooth");
-        } else {
-          toast.error(`Error: ${error.message}`);
-        }
-      } else {
-        toast.error("Error desconocido al emparejar impresora");
-      }
-      return false;
-    }
-  }, [preferences, savePreferences]);
+    const printer = await scanForPrinters();
+    if (!printer) return false;
+    assignPrinterType(printer.id, "58mm");
+    toast.success(`Impresora "${printer.name}" asignada a cocina`);
+    return true;
+  }, [assignPrinterType, scanForPrinters]);
 
   // Procesar cola de impresión
   useEffect(() => {
@@ -277,7 +356,7 @@ export function useBluetootPrinter() {
             htmlContent,
             "Ticket Cliente",
             "80mm",
-            preferences.clientPrinter80mm,
+            getClientPrinter(),
             {
               openDrawer: preferences.openDrawerOn80mm,
               fullCut: preferences.fullCutOn80mm,
@@ -292,7 +371,7 @@ export function useBluetootPrinter() {
 
       await enqueuePrintJob(printJob);
     },
-    [enqueuePrintJob, preferences, printWithPreferences]
+    [enqueuePrintJob, getClientPrinter, preferences, printWithPreferences]
   );
 
   const printCashCutTicket = useCallback(
@@ -310,7 +389,7 @@ export function useBluetootPrinter() {
             htmlContent,
             title,
             "80mm",
-            preferences.clientPrinter80mm,
+            getClientPrinter(),
             {
               openDrawer: preferences.openDrawerOn80mm,
               fullCut: preferences.fullCutOn80mm,
@@ -325,7 +404,7 @@ export function useBluetootPrinter() {
 
       await enqueuePrintJob(printJob);
     },
-    [enqueuePrintJob, preferences, printWithPreferences]
+    [enqueuePrintJob, getClientPrinter, preferences, printWithPreferences]
   );
 
   // Imprimir comanda de cocina
@@ -347,8 +426,8 @@ export function useBluetootPrinter() {
           await printWithPreferences(
             htmlContent,
             "Comanda Cocina",
-            "80mm",
-            preferences.clientPrinter80mm
+            "58mm",
+            getKitchenPrinter()
           );
         } catch (error) {
           console.error("Error al imprimir comanda:", error);
@@ -359,7 +438,7 @@ export function useBluetootPrinter() {
 
       await enqueuePrintJob(printJob);
     },
-    [enqueuePrintJob, preferences, printWithPreferences]
+    [enqueuePrintJob, getKitchenPrinter, printWithPreferences]
   );
 
   const printKitchenAndClientCombined = useCallback(
@@ -383,7 +462,7 @@ export function useBluetootPrinter() {
         );
 
         if (preferences.useBluetoothIfAvailable) {
-          const printer80 = preferences.clientPrinter80mm;
+          const printer80 = getClientPrinter();
           if (printer80?.address) {
             try {
               await printMultipleToDevice(printer80.address, [
@@ -427,7 +506,7 @@ export function useBluetootPrinter() {
 
       await enqueuePrintJob(printJob);
     },
-    [enqueuePrintJob, preferences]
+    [enqueuePrintJob, getClientPrinter, preferences]
   );
 
   // Imprimir ambos documentos (cliente y cocina)
@@ -454,21 +533,50 @@ export function useBluetootPrinter() {
 
   // Desemparejar impresora 80mm
   const unpairClientPrinter = useCallback(() => {
-    const newPrefs = { ...preferences, clientPrinter80mm: undefined };
+    const printerId = preferences.clientPrinterId;
+    if (!printerId) return;
+
+    const updatedPrinters = { ...preferences.printers };
+    if (updatedPrinters[printerId]) {
+      updatedPrinters[printerId] = { ...updatedPrinters[printerId], type: null };
+    }
+    const newPrefs: PrinterPreferences = {
+      ...preferences,
+      printers: updatedPrinters,
+      clientPrinterId: undefined,
+    };
     savePreferences(newPrefs);
     toast.success("Impresora 80mm desemparejada");
   }, [preferences, savePreferences]);
 
   // Desemparejar impresora 58mm
   const unpairKitchenPrinter = useCallback(() => {
-    const newPrefs = { ...preferences, kitchenPrinter58mm: undefined };
+    const printerId = preferences.kitchenPrinterId;
+    if (!printerId) return;
+
+    const updatedPrinters = { ...preferences.printers };
+    if (updatedPrinters[printerId]) {
+      updatedPrinters[printerId] = { ...updatedPrinters[printerId], type: null };
+    }
+    const newPrefs: PrinterPreferences = {
+      ...preferences,
+      printers: updatedPrinters,
+      kitchenPrinterId: undefined,
+    };
     savePreferences(newPrefs);
     toast.success("Impresora 58mm desemparejada");
   }, [preferences, savePreferences]);
 
   return {
     preferences,
+    availablePrinters,
+    isScanning,
     savePreferences,
+    scanForPrinters,
+    assignPrinterType,
+    getClientPrinter,
+    getKitchenPrinter,
+    removePrinter,
     pairClientPrinter,
     pairKitchenPrinter,
     unpairClientPrinter,
