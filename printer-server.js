@@ -9,9 +9,9 @@
  * Desde Juliana POS, usa: my.bluetoothprint.scheme://http://localhost:3001/api/print/ticket
  */
 
-const express = require("express");
-const cors = require("cors");
-const { spawn } = require("child_process");
+import express from "express";
+import cors from "cors";
+import { spawn } from "node:child_process";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -72,6 +72,129 @@ function printWithLp({ destination, title, text, timeoutMs = LP_TIMEOUT_MS }) {
     child.stdin.write(text);
     child.stdin.end();
   });
+}
+
+function runCommand(command, args = [], timeoutMs = 4000) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill("SIGKILL");
+      reject(new Error(`Timeout ejecutando ${command}`));
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(error);
+    });
+
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
+        return;
+      }
+      reject(new Error(stderr.trim() || `${command} terminó con código ${code}`));
+    });
+  });
+}
+
+async function checkLpAvailable() {
+  try {
+    await runCommand("lp", ["-V"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function getPrintersStatus() {
+  const lpAvailable = await checkLpAvailable();
+  if (!lpAvailable) {
+    return {
+      lpAvailable: false,
+      defaultPrinter: null,
+      printers: [],
+      error: "No se encontró el comando 'lp'. Instala CUPS (cups-client).",
+    };
+  }
+
+  let printers = [];
+  let defaultPrinter = null;
+
+  try {
+    const { stdout } = await runCommand("lpstat", ["-p"]);
+    printers = stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("printer "))
+      .map((line) => {
+        const match = line.match(/^printer\s+(\S+)\s+/);
+        return match ? match[1] : null;
+      })
+      .filter(Boolean);
+  } catch {
+    printers = [];
+  }
+
+  try {
+    const { stdout } = await runCommand("lpstat", ["-d"]);
+    const match = stdout.match(/system default destination:\s*(\S+)/i);
+    if (match?.[1]) defaultPrinter = match[1];
+  } catch {
+    defaultPrinter = null;
+  }
+
+  return {
+    lpAvailable,
+    defaultPrinter,
+    printers,
+    error: null,
+  };
+}
+
+async function resolvePrinterDestination(type, requestedPrinter) {
+  if (requestedPrinter && String(requestedPrinter).trim()) {
+    return String(requestedPrinter).trim();
+  }
+
+  const envDestination = type === "kitchen" ? PRINTER_58MM_NAME : PRINTER_80MM_NAME;
+  const status = await getPrintersStatus();
+
+  if (!status.lpAvailable) {
+    throw new Error(status.error || "CUPS/lp no está disponible");
+  }
+
+  if (status.printers.includes(envDestination)) {
+    return envDestination;
+  }
+
+  if (status.defaultPrinter) {
+    return status.defaultPrinter;
+  }
+
+  if (status.printers.length > 0) {
+    return status.printers[0];
+  }
+
+  throw new Error("No hay impresoras registradas en CUPS (lpstat -p)");
 }
 
 // Tipos para el datos de impresora
@@ -290,6 +413,18 @@ app.get("/", (req, res) => {
   });
 });
 
+app.get("/api/print/status", async (req, res) => {
+  const status = await getPrintersStatus();
+  res.json({
+    ok: status.lpAvailable,
+    ...status,
+    configured: {
+      printer80mm: PRINTER_80MM_NAME,
+      printer58mm: PRINTER_58MM_NAME,
+    },
+  });
+});
+
 // Endpoint rápido: imprime directo por CUPS/lp a la 80mm
 // Body:
 // {
@@ -298,8 +433,19 @@ app.get("/", (req, res) => {
 //   "payload": { ... } // opcional, para generar líneas automáticamente
 // }
 app.post("/api/print-ticket", async (req, res) => {
-  const { type = "client", lines, payload = {} } = req.body || {};
-  const destination = type === "kitchen" ? PRINTER_58MM_NAME : PRINTER_80MM_NAME;
+  const { type = "client", lines, payload = {}, printer } = req.body || {};
+
+  let destination;
+  try {
+    destination = await resolvePrinterDestination(type, printer);
+  } catch (error) {
+    res.status(503).json({
+      ok: false,
+      type,
+      error: error instanceof Error ? error.message : "No se pudo resolver la impresora",
+    });
+    return;
+  }
 
   let printableLines = [];
   if (Array.isArray(lines) && lines.length > 0) {
@@ -518,6 +664,7 @@ app.listen(PORT, () => {
   console.log(`http://localhost:${PORT}`);
   console.log(`\nEndpoints disponibles:`);
   console.log(`- http://localhost:${PORT}/api/print/test`);
+  console.log(`- GET http://localhost:${PORT}/api/print/status`);
   console.log(`- POST http://localhost:${PORT}/api/print-ticket`);
   console.log(`- POST http://localhost:${PORT}/api/print/ticket`);
   console.log(`- POST http://localhost:${PORT}/api/print/ticket/pdf`);
