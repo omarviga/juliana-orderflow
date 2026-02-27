@@ -716,7 +716,7 @@ function htmlToEscPosCommands(
   commands.push(0x1b, 0x61, 0x01); // ESC a - Center alignment
 
   // Extraer texto del HTML
-  let text = html
+  const text = html
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/div>/g, "\n")
     .replace(/<div[^>]*>/g, "")

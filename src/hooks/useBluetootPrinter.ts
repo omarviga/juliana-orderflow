@@ -6,6 +6,7 @@ import {
   generateClientTicketHTML,
   generateCashCutTicketHTML,
   generateKitchenOrderHTML,
+  printToDevice,
   printViaBrowser,
 } from "@/lib/printer-formats";
 import type { CartItem } from "@/types/pos";
@@ -51,6 +52,23 @@ export function useBluetootPrinter() {
 
   const [isPrinting, setIsPrinting] = useState(false);
   const [printQueue, setPrintQueue] = useState<Array<() => Promise<void>>>([]);
+
+  const enqueuePrintJob = useCallback((job: () => Promise<void>) => {
+    return new Promise<void>((resolve, reject) => {
+      setPrintQueue((prev) => [
+        ...prev,
+        async () => {
+          try {
+            await job();
+            resolve();
+          } catch (error) {
+            reject(error);
+            throw error;
+          }
+        },
+      ]);
+    });
+  }, []);
 
   // Guardar preferencias
   const savePreferences = useCallback((prefs: PrinterPreferences) => {
@@ -181,6 +199,43 @@ export function useBluetootPrinter() {
     };
   }, [printQueue, isPrinting]);
 
+  const printWithPreferences = useCallback(
+    async (
+      htmlContent: string,
+      title: string,
+      printerSize: "80mm" | "58mm",
+      preferredPrinter?: PrinterDevice,
+      options?: {
+        openDrawer?: boolean;
+        fullCut?: boolean;
+      }
+    ) => {
+      if (preferences.useBluetoothIfAvailable) {
+        if (!preferredPrinter?.address) {
+          if (!preferences.fallbackToWeb) {
+            throw new Error("No hay impresora Bluetooth emparejada para esta impresión.");
+          }
+        } else {
+          try {
+            await printToDevice(preferredPrinter.address, htmlContent, printerSize, options);
+            toast.success(`${title} enviado a impresora Bluetooth`);
+            return;
+          } catch (error) {
+            console.error(`Error al imprimir ${title} por Bluetooth:`, error);
+            if (!preferences.fallbackToWeb) {
+              throw error;
+            }
+            toast.warning(`Bluetooth falló. Usando impresión por navegador para ${title}.`);
+          }
+        }
+      }
+
+      printViaBrowser(htmlContent, title);
+      toast.success(`${title} listo para imprimir`);
+    },
+    [preferences]
+  );
+
   // Imprimir ticket del cliente
   const printClientTicket = useCallback(
     async (
@@ -201,10 +256,16 @@ export function useBluetootPrinter() {
             dateStr,
             paymentMethodLabel
           );
-
-          // Imprimir vía navegador (PDF/diálogo del sistema)
-          printViaBrowser(htmlContent, "Ticket Cliente");
-          toast.success("Ticket listo para imprimir");
+          await printWithPreferences(
+            htmlContent,
+            "Ticket Cliente",
+            "80mm",
+            preferences.clientPrinter80mm,
+            {
+              openDrawer: preferences.openDrawerOn80mm,
+              fullCut: preferences.fullCutOn80mm,
+            }
+          );
         } catch (error) {
           console.error("Error al imprimir ticket:", error);
           toast.error("Error al imprimir ticket");
@@ -212,9 +273,9 @@ export function useBluetootPrinter() {
         }
       };
 
-      setPrintQueue((prev) => [...prev, printJob]);
+      await enqueuePrintJob(printJob);
     },
-    [preferences]
+    [enqueuePrintJob, preferences, printWithPreferences]
   );
 
   const printCashCutTicket = useCallback(
@@ -228,9 +289,16 @@ export function useBluetootPrinter() {
       const printJob = async () => {
         try {
           const htmlContent = generateCashCutTicketHTML(sales, generatedAt, title, countSummary, details);
-
-          printViaBrowser(htmlContent, title);
-          toast.success("Corte de caja listo para imprimir");
+          await printWithPreferences(
+            htmlContent,
+            title,
+            "80mm",
+            preferences.clientPrinter80mm,
+            {
+              openDrawer: preferences.openDrawerOn80mm,
+              fullCut: preferences.fullCutOn80mm,
+            }
+          );
         } catch (error) {
           console.error("Error al imprimir corte de caja:", error);
           toast.error("Error al imprimir corte de caja");
@@ -238,9 +306,9 @@ export function useBluetootPrinter() {
         }
       };
 
-      setPrintQueue((prev) => [...prev, printJob]);
+      await enqueuePrintJob(printJob);
     },
-    [preferences]
+    [enqueuePrintJob, preferences, printWithPreferences]
   );
 
   // Imprimir comanda de cocina
@@ -259,10 +327,12 @@ export function useBluetootPrinter() {
             customerName,
             dateStr
           );
-
-          // Imprimir vía navegador (PDF/diálogo del sistema)
-          printViaBrowser(htmlContent, "Comanda Cocina");
-          toast.success("Comanda lista para imprimir");
+          await printWithPreferences(
+            htmlContent,
+            "Comanda Cocina",
+            "58mm",
+            preferences.kitchenPrinter58mm
+          );
         } catch (error) {
           console.error("Error al imprimir comanda:", error);
           toast.error("Error al imprimir comanda");
@@ -270,9 +340,9 @@ export function useBluetootPrinter() {
         }
       };
 
-      setPrintQueue((prev) => [...prev, printJob]);
+      await enqueuePrintJob(printJob);
     },
-    [preferences]
+    [enqueuePrintJob, preferences, printWithPreferences]
   );
 
   // Imprimir ambos documentos (cliente y cocina)
