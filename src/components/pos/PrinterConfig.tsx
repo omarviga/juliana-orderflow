@@ -20,10 +20,8 @@ import {
 import { Bluetooth, Printer, RefreshCw, TestTube, Trash2, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
-import { printToCups, printToDevice } from "@/lib/printer-formats";
+import { printToDevice } from "@/lib/printer-formats";
 import type { PrinterDevice } from "@/types/printer";
-
-const CUPS_PRINTER_URL = import.meta.env.VITE_CUPS_PRINTER_URL?.trim();
 
 export function PrinterConfig() {
   const [open, setOpen] = useState(false);
@@ -104,32 +102,14 @@ export function PrinterConfig() {
 
       try {
         if (preferences.useBluetoothIfAvailable) {
-          try {
-            await printToDevice(printer.address, testHtml, printer.type, {
-              openDrawer: printer.type === "80mm" ? preferences.openDrawerOn80mm : false,
-              fullCut: true,
-            });
-            toast.success(`Prueba enviada a ${printer.name}`, { id: toastId });
-            return;
-          } catch (error) {
-            console.error("Error de prueba por Bluetooth:", error);
-            if (!CUPS_PRINTER_URL) {
-              throw error;
-            }
-          }
+          await printToDevice(printer.address, testHtml, printer.type, {
+            openDrawer: printer.type === "80mm" ? preferences.openDrawerOn80mm : false,
+            fullCut: true,
+          });
+          toast.success(`Prueba enviada a ${printer.name}`, { id: toastId });
+          return;
         }
-
-        if (CUPS_PRINTER_URL) {
-          try {
-            await printToCups(testHtml, CUPS_PRINTER_URL, printer.type);
-            toast.success(`Prueba enviada a ${printer.name}`, { id: toastId });
-            return;
-          } catch (error) {
-            console.error("Error de prueba por CUPS:", error);
-            throw error;
-          }
-        }
-        throw new Error("No hay ruta de impresión ESC/POS disponible.");
+        throw new Error("Impresión Bluetooth ESC/POS desactivada.");
       } catch (error) {
         console.error("Error en prueba:", error);
         toast.error(
