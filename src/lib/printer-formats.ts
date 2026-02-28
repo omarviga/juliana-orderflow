@@ -87,10 +87,8 @@ export function generateClientTicketEscPos(
     ...CMD.CENTER,
     ...CMD.FONT_LARGE,
     ...CMD.BOLD_ON,
-    ...encode("Tufiana"), // Cambiado de JULIANA a Tufiana como en la imagen
     ...CMD.BOLD_OFF,
     ...CMD.FONT_NORMAL,
-    ...encode("BARRA COTIDIANA"),
     ...encode("AV. MIGUEL HIDALGO #276, COL CENTRO, ACAMBARO GTO."),
     ...encode("Tel. 417 206 9111"),
     ...encode(doubleSeparator), // Línea doble como en la imagen
@@ -249,8 +247,38 @@ export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): st
     : "http://localhost:8080";
   const logoUrl = `${baseUrl}/juliana-logo.png`;
 
-  // Crear HTML exactamente como la imagen
-  const html = `<!DOCTYPE html>
+  const hasKitchenSection = text.includes("COMANDA #");
+  const escapedText = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // Si hay comanda + ticket en el mismo trabajo, imprimir texto completo sin filtrar líneas.
+  const html = hasKitchenSection
+    ? `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: white; font-family: 'Courier New', monospace; padding: 10px; }
+    .ticket { width: 80mm; border: 1px solid #000; border-radius: 8px; padding: 10px; }
+    .logo-container { text-align: center; margin-bottom: 8px; }
+    .logo { max-width: 150px; height: auto; display: inline-block; }
+    .title { text-align: center; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+    pre { white-space: pre-wrap; font-size: 12px; line-height: 1.25; }
+  </style>
+</head>
+<body>
+  <div class="ticket">
+    <div class="logo-container"><img class="logo" src="${logoUrl}" alt="Juliana" onerror="this.style.display='none'"></div>
+    <div class="title">COMANDA + TICKET</div>
+    <pre>${escapedText}</pre>
+  </div>
+</body>
+</html>`
+    : `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
@@ -366,9 +394,7 @@ export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): st
       letter-spacing: 1px;
       margin-top: 15px;
     }
-    pre {
-      display: none;
-    }
+    pre { display: none; }
   </style>
 </head>
 <body>
