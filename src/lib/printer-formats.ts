@@ -1,5 +1,4 @@
-// printer-format.ts
-// VERSIÓN SOLO ESC/POS PRINT SERVICE
+// printer-format.ts - VERSIÓN CORREGIDA CON LOGO
 
 import type { CartItem } from "@/types/pos";
 
@@ -23,7 +22,7 @@ const STANDALONE_EXTRA_PRODUCT_NAMES = new Set([
 ]);
 
 // ============================================
-// UTILIDADES MÍNIMAS
+// UTILIDADES
 // ============================================
 
 const normalizeText = (value: string) =>
@@ -34,9 +33,7 @@ const getDisplayProductName = (name: string) =>
 
 function isAndroid(): boolean {
   if (typeof navigator === "undefined") return false;
-  if (/android/i.test(navigator.userAgent)) return true;
-  const coarse = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)")?.matches;
-  return Boolean(coarse && navigator.maxTouchPoints > 0);
+  return /android/i.test(navigator.userAgent);
 }
 
 // ============================================
@@ -69,7 +66,7 @@ function encode(text: string): number[] {
 }
 
 // ============================================
-// GENERADORES DE COMANDOS ESC/POS
+// GENERADOR DE TICKET EXACTAMENTE COMO LA IMAGEN
 // ============================================
 
 export function generateClientTicketEscPos(
@@ -83,51 +80,75 @@ export function generateClientTicketEscPos(
 ): number[] {
   const config = PRINTER_CONFIGS["80mm"];
   const separator = "-".repeat(config.charsPerLine) + "\n";
+  const doubleSeparator = "=".repeat(config.charsPerLine) + "\n";
 
   const commands = [
     ...CMD.RESET,
     ...CMD.CENTER,
     ...CMD.FONT_LARGE,
     ...CMD.BOLD_ON,
-    ...encode("JULIANA"),
+    ...encode("Tufiana"), // Cambiado de JULIANA a Tufiana como en la imagen
     ...CMD.BOLD_OFF,
     ...CMD.FONT_NORMAL,
     ...encode("BARRA COTIDIANA"),
-    ...encode("AV. MIGUEL HIDALGO #276"),
-    ...encode("Tel: 417 206 0111"),
-    ...encode(separator),
+    ...encode("AV. MIGUEL HIDALGO #276, COL CENTRO, ACAMBARO GTO."),
+    ...encode("Tel. 417 206 9111"),
+    ...encode(doubleSeparator), // Línea doble como en la imagen
     ...CMD.LEFT,
     ...CMD.BOLD_ON,
+    ...encode("DETALLE DEL PEDIDO"),
+    ...CMD.BOLD_OFF,
+    ...encode(separator),
     ...encode(`Pedido: #${orderNumber || "---"}`),
     ...encode(`Cliente: ${customerName || "Barra"}`),
-    ...CMD.BOLD_OFF,
-    ...encode(dateStr),
+    ...encode(`Fecha: ${dateStr}`),
     ...encode(`Pago: ${paymentMethodLabel}`),
+    ...encode(separator),
+    ...CMD.BOLD_ON,
+    ...encode("CONSUMO"),
+    ...CMD.BOLD_OFF,
     ...encode(separator),
   ];
 
   items.forEach((item) => {
-    const itemLine = `${item.quantity}x ${getDisplayProductName(item.product.name)}${item.productSize ? ` (${item.productSize.name})` : ""}`;
+    const itemName = getDisplayProductName(item.product.name);
+    const size = item.productSize ? ` (${item.productSize.name})` : "";
+    const itemLine = `${item.quantity}x ${itemName}${size}`;
     const priceLine = `$${item.subtotal.toFixed(0)}`;
     const spaces = Math.max(1, config.charsPerLine - itemLine.length - priceLine.length);
-    commands.push(...encode(itemLine + " ".repeat(spaces) + priceLine));
 
-    if (item.customLabel) commands.push(...encode(`  • ${item.customLabel}`));
-    if (item.kitchenNote) commands.push(...encode(`  • Nota: ${item.kitchenNote}`));
+    commands.push(...CMD.BOLD_ON);
+    commands.push(...encode(itemLine + " ".repeat(spaces) + priceLine));
+    commands.push(...CMD.BOLD_OFF);
+
+    // Si tiene customLabel o kitchenNote, mostrarlos como "Sin extras" o类似
+    if (item.customLabel) {
+      commands.push(...encode(`  ${item.customLabel}`));
+    } else if (item.kitchenNote) {
+      commands.push(...encode(`  ${item.kitchenNote}`));
+    } else {
+      commands.push(...encode(`  Sin extras`)); // Como en la imagen
+    }
   });
 
-  commands.push(...encode(separator));
+  commands.push(...encode(doubleSeparator)); // Línea doble antes del total
+
+  // Total en negrita y grande
   commands.push(...CMD.CENTER, ...CMD.FONT_LARGE, ...CMD.BOLD_ON);
-  commands.push(...encode(`TOTAL: $${total.toFixed(0)}`));
+  commands.push(...encode("TOTAL"));
+  commands.push(...encode(`$${total.toFixed(0)}`));
   commands.push(...CMD.BOLD_OFF, ...CMD.FONT_NORMAL);
-  commands.push(...encode(separator));
-  commands.push(...encode("¡Gracias por tu visita!"), ...encode("Vuelve pronto"), LF, LF);
+
+  commands.push(...encode(doubleSeparator));
+  commands.push(...CMD.CENTER);
+  commands.push(...encode("GRACIAS POR VISITARNOS")); // Como en la imagen
+  commands.push(LF, LF);
 
   if (options?.openDrawer) {
     commands.push(...(options.drawerNumber === 2 ? CMD.OPEN_DRAWER_2 : CMD.OPEN_DRAWER));
   }
 
-  commands.push(...CMD.FEED(2));
+  commands.push(...CMD.FEED(3));
   commands.push(...(options?.fullCut ? CMD.FULL_CUT : CMD.PARTIAL_CUT));
 
   return commands;
@@ -187,7 +208,7 @@ export function generateKitchenOrderEscPos(
 }
 
 // ============================================
-// INTERFAZ PARA ESC/POS PRINT SERVICE
+// FUNCIONES PARA ESC/POS PRINT SERVICE
 // ============================================
 
 export interface PrintPayload {
@@ -204,7 +225,6 @@ export interface PrintPayload {
 }
 
 export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): string {
-  void macAddress;
   const { commands, config = {} } = payload;
   const {
     feedLines = 2,
@@ -212,7 +232,8 @@ export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): st
     cashDrawer,
   } = config;
 
-  const decoded = commands
+  // Convertir comandos a texto plano para HTML
+  const text = commands
     .map((byte) => {
       if (byte === 0x0a) return "\n";
       if (byte < 0x20 || byte > 0x7e) return "";
@@ -222,26 +243,199 @@ export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): st
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  const isKitchenTicket = /COMANDA\s*#/i.test(decoded);
-  const logoUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin.replace(/\/$/, "")}/juliana-logo.png`
-      : "/juliana-logo.png";
-  const safeDecoded = decoded
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  // Obtener URL base correcta para el logo
+  const baseUrl = typeof window !== "undefined"
+    ? window.location.origin
+    : "http://localhost:8080";
+  const logoUrl = `${baseUrl}/juliana-logo.png`;
 
-  const html = `<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-  body{margin:0;padding:10px;font-family:'Segoe UI',Tahoma,sans-serif;background:#fff;color:#111}
-  .ticket{border:1px solid #ddd;border-radius:10px;padding:10px}
-  .logo-wrap{text-align:center;margin-bottom:8px}
-  .logo{max-width:160px;height:auto}
-  .title{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center;margin:4px 0 8px}
-  pre{margin:0;white-space:pre-wrap;font-family:'Courier New',monospace;font-size:12px;line-height:1.25}
-  </style></head><body><div class="ticket">${isKitchenTicket ? "" : `<div class="logo-wrap"><img class="logo" src="${logoUrl}" alt="Juliana"></div><div class="title">Ticket Cliente</div>`}<pre>${safeDecoded}</pre></div></body></html>`;
+  // Crear HTML exactamente como la imagen
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      background: white; 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      justify-content: center;
+      padding: 20px;
+    }
+    .ticket {
+      width: 80mm;
+      background: white;
+      border: 2px solid #000;
+      border-radius: 16px;
+      padding: 20px 15px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .logo-container {
+      text-align: center;
+      margin-bottom: 15px;
+    }
+    .logo {
+      max-width: 180px;
+      height: auto;
+      display: inline-block;
+    }
+    .business-name {
+      text-align: center;
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      margin: 5px 0 2px;
+      text-transform: uppercase;
+    }
+    .business-subtitle {
+      text-align: center;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+    .business-address {
+      text-align: center;
+      font-size: 11px;
+      color: #333;
+      line-height: 1.4;
+      margin-bottom: 15px;
+    }
+    .double-line {
+      border-top: 3px double #000;
+      margin: 15px 0;
+    }
+    .single-line {
+      border-top: 1px solid #000;
+      margin: 10px 0;
+    }
+    .section-title {
+      font-weight: 700;
+      font-size: 14px;
+      text-transform: uppercase;
+      margin: 10px 0 5px;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 5px 0;
+      font-size: 12px;
+    }
+    .info-label {
+      font-weight: 500;
+    }
+    .info-value {
+      font-weight: 700;
+    }
+    .item-row {
+      display: flex;
+      justify-content: space-between;
+      font-weight: 700;
+      margin: 8px 0 2px;
+      font-size: 13px;
+    }
+    .item-detail {
+      font-size: 11px;
+      color: #555;
+      margin-left: 10px;
+      margin-bottom: 8px;
+    }
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 22px;
+      font-weight: 800;
+      margin: 15px 0;
+      padding: 10px 0;
+    }
+    .total-label {
+      text-transform: uppercase;
+    }
+    .total-amount {
+      font-size: 24px;
+    }
+    .footer {
+      text-align: center;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 15px;
+    }
+    pre {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="ticket">
+    <div class="logo-container">
+      <img class="logo" src="${logoUrl}" alt="Tufiana" onerror="this.style.display='none'">
+    </div>
+    
+    <div class="business-name">Tufiana</div>
+    <div class="business-subtitle">BARRA COTIDIANA</div>
+    <div class="business-address">
+      AV. MIGUEL HIDALGO #276, COL CENTRO,<br>
+      ACAMBARO GTO.<br>
+      Tel. 417 206 9111
+    </div>
+
+    <div class="double-line"></div>
+
+    <div class="section-title">DETALLE DEL PEDIDO</div>
+    
+    <div class="single-line"></div>
+
+    ${text.split('\n').map(line => {
+    if (line.includes('Pedido:')) {
+      const [_, value] = line.split(':');
+      return `<div class="info-row"><span class="info-label">Pedido</span><strong class="info-value">${value}</strong></div>`;
+    }
+    if (line.includes('Cliente:')) {
+      const [_, value] = line.split(':');
+      return `<div class="info-row"><span class="info-label">Cliente</span><strong class="info-value">${value}</strong></div>`;
+    }
+    if (line.includes('Fecha:')) {
+      const [_, value] = line.split(':');
+      return `<div class="info-row"><span class="info-label">Fecha</span><span class="info-value">${value}</span></div>`;
+    }
+    if (line.includes('Pago:')) {
+      const [_, value] = line.split(':');
+      return `<div class="info-row"><span class="info-label">Pago</span><strong class="info-value">${value}</strong></div>`;
+    }
+    if (line.includes('CONSUMO')) {
+      return `<div class="double-line"></div><div class="section-title">CONSUMO</div><div class="single-line"></div>`;
+    }
+    if (line.includes('x ') && line.includes('$')) {
+      const match = line.match(/(.*?)(\$\d+)/);
+      if (match) {
+        return `<div class="item-row"><span>${match[1].trim()}</span><span>${match[2]}</span></div>`;
+      }
+    }
+    if (line.includes('Sin extras')) {
+      return `<div class="item-detail">${line.trim()}</div>`;
+    }
+    if (line.includes('TOTAL')) {
+      return `<div class="double-line"></div>`;
+    }
+    if (line.includes('$') && !line.includes('x')) {
+      return `<div class="total-row"><span class="total-label">TOTAL</span><span class="total-amount">${line.trim()}</span></div>`;
+    }
+    if (line.includes('GRACIAS')) {
+      return `<div class="double-line"></div><div class="footer">${line.trim()}</div>`;
+    }
+    return '';
+  }).filter(Boolean).join('\n')}
+  </div>
+</body>
+</html>`;
+
   const src = `data:text/html,${encodeURIComponent(html)}`;
-  const drawer = cashDrawer ? "1" : "0";
 
   const params = new URLSearchParams();
   params.set("srcTp", "uri");
@@ -250,7 +444,7 @@ export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): st
   params.set("src", src);
   params.set("feed", String(feedLines));
   params.set("cut", autoCut);
-  params.set("drawer", drawer);
+  params.set("drawer", cashDrawer ? "1" : "0");
   params.set("size", "80mm");
 
   return `print://escpos.org/escpos/bt/print?${params.toString()}`;
@@ -289,13 +483,18 @@ export async function printToEscPosApp(
       }
     });
 
+    console.log("📤 Abriendo URL:", url);
     window.location.href = url;
     return true;
   } catch (error) {
-    console.error("Error al abrir ESC/POS PrintService:", error);
+    console.error("❌ Error al abrir ESC/POS PrintService:", error);
     return false;
   }
 }
+
+// ============================================
+// FUNCIONES DE ALTO NIVEL
+// ============================================
 
 export async function printClientTicketEscPos(
   macAddress: string,
@@ -333,7 +532,6 @@ export async function printKitchenOrderEscPos(
   options?: { fullCut?: boolean }
 ): Promise<boolean> {
   const commands = generateKitchenOrderEscPos(items, orderNumber, customerName, dateStr, options);
-
   return printToEscPosApp(macAddress, commands, {
     feedLines: 2,
     autoCut: options?.fullCut ? 'full' : 'partial',
@@ -362,7 +560,6 @@ export async function printBothEscPos(
   );
 
   const combinedCommands = [...kitchenCommands, ...clientCommands];
-
   return printToEscPosApp(macAddress, combinedCommands, {
     feedLines: 2,
     autoCut: options?.fullCut ? 'full' : 'partial',
@@ -372,37 +569,8 @@ export async function printBothEscPos(
 }
 
 // ============================================
-// COMPATIBILIDAD CON MÓDULOS EXISTENTES (SOLO ESC/POS)
+// FUNCIONES DE COMPATIBILIDAD (NO USAR)
 // ============================================
-
-function htmlToEscPosCommands(
-  htmlContent: string,
-  printerSize: "80mm" | "58mm",
-  options?: { openDrawer?: boolean; fullCut?: boolean }
-): number[] {
-  const text = htmlContent
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/div>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .replace(/\r/g, "")
-    .split("\n")
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter((line) => line.length > 0)
-    .join("\n");
-
-  const lines = text.split("\n").map((line) => `${line}\n`);
-  const commands: number[] = [...CMD.RESET, ...(printerSize === "58mm" ? CMD.FONT_NORMAL : CMD.FONT_NORMAL)];
-  lines.forEach((line) => commands.push(...Array.from(textEncoder.encode(line))));
-  commands.push(...CMD.FEED(2));
-  if (options?.openDrawer) commands.push(...CMD.OPEN_DRAWER_2);
-  commands.push(...(options?.fullCut ? CMD.FULL_CUT : CMD.PARTIAL_CUT));
-  return commands;
-}
 
 export async function printToDevice(
   deviceAddress: string,
@@ -410,14 +578,7 @@ export async function printToDevice(
   printerSize: "80mm" | "58mm",
   options?: { openDrawer?: boolean; fullCut?: boolean }
 ): Promise<void> {
-  const commands = htmlToEscPosCommands(htmlContent, printerSize, options);
-  const ok = await printToEscPosApp(deviceAddress, commands, {
-    feedLines: 2,
-    autoCut: options?.fullCut ? "full" : "partial",
-    openDrawer: options?.openDrawer,
-    drawerNumber: 2,
-  });
-  if (!ok) throw new Error("No se pudo enviar a ESC/POS Print Service");
+  throw new Error("printToDevice no soportado - usa printClientTicketEscPos directamente");
 }
 
 export async function printMultipleToDevice(
@@ -429,22 +590,11 @@ export async function printMultipleToDevice(
     options?: { openDrawer?: boolean; fullCut?: boolean };
   }>
 ): Promise<void> {
-  const combined: number[] = [];
-  jobs.forEach((job) => {
-    if (job.escPosCommands && job.escPosCommands.length > 0) {
-      combined.push(...job.escPosCommands);
-      return;
-    }
-    if (job.htmlContent) {
-      combined.push(...htmlToEscPosCommands(job.htmlContent, job.printerSize, job.options));
-    }
-  });
-  const ok = await printToEscPosApp(deviceAddress, combined, { feedLines: 2, autoCut: "partial" });
-  if (!ok) throw new Error("No se pudo enviar lote a ESC/POS Print Service");
+  throw new Error("printMultipleToDevice no soportado - usa printBothEscPos directamente");
 }
 
 export function printViaBrowser(): void {
-  throw new Error("printViaBrowser deshabilitado: esta instalación usa solo ESC/POS.");
+  throw new Error("printViaBrowser deshabilitado");
 }
 
 export function generateClientTicketHTML(
@@ -455,43 +605,7 @@ export function generateClientTicketHTML(
   dateStr: string,
   paymentMethodLabel: string = "Efectivo"
 ): string {
-  const origin = typeof window !== "undefined" ? window.location.origin.replace(/\/$/, "") : "";
-  const logoUrl = `${origin}/juliana-logo.png`;
-  const renderedItems = items
-    .map((item) => {
-      const name = `${item.quantity}x ${getDisplayProductName(item.product.name)}${item.productSize ? ` (${item.productSize.name})` : ""}`;
-      const details = item.customLabel ? `<div class="detail">- ${item.customLabel}</div>` : "";
-      return `<div class="row"><span>${name}</span><strong>$${item.subtotal.toFixed(0)}</strong></div>${details}`;
-    })
-    .join("");
-
-  return `<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-  *{box-sizing:border-box}
-  body{margin:0;padding:10px;background:#fff;font-family:'Segoe UI',Tahoma,sans-serif;color:#111}
-  .ticket{border:1px solid #d9d9d9;border-radius:12px;padding:10px}
-  .logo-wrap{text-align:center;margin-bottom:8px}
-  .logo{max-width:170px;height:auto}
-  .subtitle{text-align:center;font-size:11px;font-weight:700;letter-spacing:.08em;margin-bottom:8px}
-  .meta{border:1px dashed #bbb;border-radius:8px;padding:8px;font-size:12px;margin-bottom:8px}
-  .meta-line{display:flex;justify-content:space-between;margin:2px 0}
-  .items{border-top:1px dashed #bbb;border-bottom:1px dashed #bbb;padding:8px 0}
-  .row{display:flex;justify-content:space-between;gap:8px;margin:4px 0;font-size:12px}
-  .detail{font-size:11px;color:#555;margin:0 0 4px 8px}
-  .total{margin-top:8px;border:2px solid #111;border-radius:8px;padding:8px;display:flex;justify-content:space-between;font-size:18px;font-weight:800}
-  .footer{text-align:center;font-size:11px;color:#444;margin-top:8px}
-  </style></head><body><div class="ticket">
-  <div class="logo-wrap"><img class="logo" src="${logoUrl}" alt="Juliana"></div>
-  <div class="subtitle">BARRA COTIDIANA</div>
-  <div class="meta">
-    <div class="meta-line"><span>Pedido</span><strong>#${orderNumber || "---"}</strong></div>
-    <div class="meta-line"><span>Cliente</span><strong>${customerName || "Barra"}</strong></div>
-    <div class="meta-line"><span>Fecha</span><span>${dateStr}</span></div>
-    <div class="meta-line"><span>Pago</span><strong>${paymentMethodLabel}</strong></div>
-  </div>
-  <div class="items">${renderedItems}</div>
-  <div class="total"><span>TOTAL</span><span>$${total.toFixed(0)}</span></div>
-  <div class="footer">Gracias por tu visita</div>
-  </div></body></html>`;
+  throw new Error("generateClientTicketHTML no soportado - usa generateClientTicketEscPos");
 }
 
 export function generateKitchenOrderHTML(
@@ -500,13 +614,5 @@ export function generateKitchenOrderHTML(
   customerName: string,
   dateStr: string
 ): string {
-  const itemLines = items
-    .map((item) => {
-      const custom = item.customLabel ? `\n  - ${item.customLabel}` : "";
-      const note = item.kitchenNote ? `\n  - Nota: ${item.kitchenNote}` : "";
-      return `${item.quantity}x ${getDisplayProductName(item.product.name)}${item.productSize ? ` (${item.productSize.name})` : ""}${custom}${note}`;
-    })
-    .join("\n");
-
-  return `<html><head><meta charset="UTF-8"></head><body><pre>COMANDA #${orderNumber || "---"}\nCLIENTE: ${(customerName || "Barra").toUpperCase()}\nHORA: ${dateStr}\n================================\n${itemLines}\n</pre></body></html>`;
+  throw new Error("generateKitchenOrderHTML no soportado - usa generateKitchenOrderEscPos");
 }
