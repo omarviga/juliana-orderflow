@@ -625,7 +625,7 @@ export async function printMultipleToDevice(
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error desconocido en fallback Android";
       errors.push(`Fallback Android: ${message}`);
-      console.warn("Fallback Android falló. Intentando Web Bluetooth...", error);
+      throw new Error(`No se pudo abrir ESC/POS Print Service en Android. ${errors.join(" | ")}`);
     }
   }
 
