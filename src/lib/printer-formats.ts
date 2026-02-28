@@ -1,5 +1,5 @@
 // printer-format.ts
-// VERSIÓN SOLO ESC/POS PRINT SERVICE - SIN NADA MÁS
+// VERSIÓN SOLO ESC/POS PRINT SERVICE
 
 import type { CartItem } from "@/types/pos";
 
@@ -37,13 +37,6 @@ function isAndroid(): boolean {
   return /android/i.test(navigator.userAgent);
 }
 
-function htmlToPlainText(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 // ============================================
 // CONSTANTES ESC/POS
 // ============================================
@@ -62,8 +55,8 @@ const CMD = {
   FONT_LARGE: [GS, 0x21, 0x11],
   FULL_CUT: [GS, 0x56, 0x00],
   PARTIAL_CUT: [GS, 0x56, 0x01],
-  OPEN_DRAWER: [ESC, 0x70, 0x00, 0x19, 0xFA], // Cajón 1
-  OPEN_DRAWER_2: [ESC, 0x70, 0x01, 0x19, 0xFA], // Cajón 2
+  OPEN_DRAWER: [ESC, 0x70, 0x00, 0x19, 0xFA],
+  OPEN_DRAWER_2: [ESC, 0x70, 0x01, 0x19, 0xFA],
   FEED: (lines: number) => [ESC, 0x64, lines],
 };
 
@@ -196,7 +189,7 @@ export function generateKitchenOrderEscPos(
 // ============================================
 
 export interface PrintPayload {
-  commands: number[]; // Comandos ESC/POS
+  commands: number[];
   config?: {
     feedLines?: number;
     autoCut?: 'full' | 'partial';
@@ -208,9 +201,6 @@ export interface PrintPayload {
   };
 }
 
-/**
- * Construye URL para abrir ESC/POS PrintService
- */
 export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): string {
   const { commands, config = {} } = payload;
   const {
@@ -219,10 +209,7 @@ export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): st
     cashDrawer,
   } = config;
 
-  // Convertir comandos a base64
   const commandsBase64 = btoa(String.fromCharCode(...commands));
-
-  // Construir URL con el esquema oficial
   const url = new URL(`print://escpos.org/escpos/bt/${macAddress}`);
 
   url.searchParams.append('commands', commandsBase64);
@@ -238,16 +225,10 @@ export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): st
   return url.toString();
 }
 
-/**
- * Detecta si estamos en Android (único lugar donde funciona la app)
- */
 export function isEscPosAppAvailable(): boolean {
   return isAndroid();
 }
 
-/**
- * Función ÚNICA para imprimir - TODO pasa por aquí
- */
 export async function printToEscPosApp(
   macAddress: string,
   commands: number[],
@@ -285,13 +266,6 @@ export async function printToEscPosApp(
   }
 }
 
-// ============================================
-// FUNCIONES DE ALTO NIVEL (LAS QUE USA EL HOOK)
-// ============================================
-
-/**
- * Imprime ticket de cliente (USA SOLO ESC/POS)
- */
 export async function printClientTicketEscPos(
   macAddress: string,
   items: CartItem[],
@@ -319,9 +293,6 @@ export async function printClientTicketEscPos(
   });
 }
 
-/**
- * Imprime comanda de cocina (USA SOLO ESC/POS)
- */
 export async function printKitchenOrderEscPos(
   macAddress: string,
   items: CartItem[],
@@ -335,13 +306,10 @@ export async function printKitchenOrderEscPos(
   return printToEscPosApp(macAddress, commands, {
     feedLines: 2,
     autoCut: options?.fullCut ? 'full' : 'partial',
-    openDrawer: false // La comanda no abre cajón
+    openDrawer: false
   });
 }
 
-/**
- * Imprime ambos (comanda + ticket) en un solo trabajo
- */
 export async function printBothEscPos(
   macAddress: string,
   items: CartItem[],
@@ -362,7 +330,6 @@ export async function printBothEscPos(
     { openDrawer: options?.openDrawer, fullCut: options?.fullCut, drawerNumber: options?.drawerNumber }
   );
 
-  // Combinar comandos (kitchen primero, luego cliente)
   const combinedCommands = [...kitchenCommands, ...clientCommands];
 
   return printToEscPosApp(macAddress, combinedCommands, {
