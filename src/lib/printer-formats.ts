@@ -1,4 +1,4 @@
-// printer-format.ts - VERSIÓN CORREGIDA CON COMANDA DETALLADA Y TICKET EXACTO
+// printer-format.ts - VERSIÓN COMPLETA Y CORREGIDA CON TODOS LOS COMANDOS ESC/POS
 
 import type { CartItem } from "@/types/pos";
 
@@ -37,26 +37,61 @@ function isAndroid(): boolean {
 }
 
 // ============================================
-// CONSTANTES ESC/POS
+// CONSTANTES ESC/POS COMPLETAS
 // ============================================
 
 const ESC = 0x1b;
 const GS = 0x1d;
 const LF = 0x0a;
+const CR = 0x0d;
+const NUL = 0x00;
 
 const CMD = {
-  RESET: [ESC, 0x40],
-  CENTER: [ESC, 0x61, 0x01],
-  LEFT: [ESC, 0x61, 0x00],
-  BOLD_ON: [ESC, 0x45, 0x01],
-  BOLD_OFF: [ESC, 0x45, 0x00],
-  FONT_NORMAL: [GS, 0x21, 0x00],
-  FONT_LARGE: [GS, 0x21, 0x11],
-  FULL_CUT: [GS, 0x56, 0x00],
-  PARTIAL_CUT: [GS, 0x56, 0x01],
-  OPEN_DRAWER: [ESC, 0x70, 0x00, 0x19, 0xFA],
-  OPEN_DRAWER_2: [ESC, 0x70, 0x01, 0x19, 0xFA],
-  FEED: (lines: number) => [ESC, 0x64, lines],
+  // Inicialización
+  RESET: [ESC, 0x40],                     // ESC @
+
+  // Alineación
+  LEFT: [ESC, 0x61, 0x00],                 // ESC a n (0=left)
+  CENTER: [ESC, 0x61, 0x01],               // ESC a n (1=center)
+  RIGHT: [ESC, 0x61, 0x02],                 // ESC a n (2=right)
+
+  // Estilo de texto
+  BOLD_ON: [ESC, 0x45, 0x01],               // ESC E n (1=bold on)
+  BOLD_OFF: [ESC, 0x45, 0x00],               // ESC E n (0=bold off)
+
+  // Tamaño de fuente
+  FONT_NORMAL: [GS, 0x21, 0x00],            // GS ! n (0=normal)
+  FONT_DOUBLE_HEIGHT: [GS, 0x21, 0x01],      // GS ! n (1=double height)
+  FONT_DOUBLE_WIDTH: [GS, 0x21, 0x10],       // GS ! n (16=double width)
+  FONT_LARGE: [GS, 0x21, 0x11],              // GS ! n (17=double height & width)
+
+  // Corte de papel
+  FULL_CUT: [GS, 0x56, 0x00],                // GS V m (0=full cut)
+  PARTIAL_CUT: [GS, 0x56, 0x01],             // GS V m (1=partial cut)
+
+  // Abrir cajón
+  OPEN_DRAWER: [ESC, 0x70, 0x00, 0x19, 0xFA],  // ESC p m t1 t2 (m=0 drawer 1)
+  OPEN_DRAWER_2: [ESC, 0x70, 0x01, 0x19, 0xFA], // ESC p m t1 t2 (m=1 drawer 2)
+
+  // Alimentar papel
+  FEED: (lines: number) => [ESC, 0x64, lines],  // ESC d n
+
+  // Línea de puntos
+  DASH_LINE: (count: number) => {
+    const line = "-".repeat(count) + "\n";
+    return Array.from(textEncoder.encode(line));
+  },
+
+  // Línea doble
+  DOUBLE_LINE: (count: number) => {
+    const line = "=".repeat(count) + "\n";
+    return Array.from(textEncoder.encode(line));
+  },
+
+  // Saltos de línea
+  LINE_FEED: [LF],
+  LINE_FEED_2: [LF, LF],
+  LINE_FEED_3: [LF, LF, LF],
 };
 
 const textEncoder = new TextEncoder();
@@ -66,7 +101,7 @@ function encode(text: string): number[] {
 }
 
 // ============================================
-// GENERADOR DE COMANDA (PARTE 1) - CON FORMATO CORRECTO
+// GENERADOR DE COMANDA (PARTE 1) - COMPLETO
 // ============================================
 
 export function generateKitchenOrderEscPos(
@@ -76,39 +111,42 @@ export function generateKitchenOrderEscPos(
   dateStr: string
 ): number[] {
   const config = PRINTER_CONFIGS["58mm"];
-  const separator = "-".repeat(config.charsPerLine) + "\n";
+  const separator = "-".repeat(config.charsPerLine);
+  const commands: number[] = [];
 
-  const commands = [
-    ...CMD.RESET,
-    ...CMD.LEFT,
-    ...CMD.BOLD_ON,
-    ...encode(`CLIENTE: ${(customerName || "Barra").toUpperCase()}`),
-    ...CMD.BOLD_OFF,
-    ...encode(`Hora: ${dateStr}`),
-    ...encode(separator),
-  ];
+  // Inicializar impresora
+  commands.push(...CMD.RESET);
 
+  // Cliente y hora
+  commands.push(...CMD.LEFT);
+  commands.push(...CMD.BOLD_ON);
+  commands.push(...encode(`CLIENTE: ${(customerName || "Barra").toUpperCase()}`));
+  commands.push(...CMD.BOLD_OFF);
+  commands.push(...encode(`Hora: ${dateStr}`));
+
+  // Línea separadora
+  commands.push(...encode(separator));
+
+  // Items
   items.forEach((item) => {
-    // Formato: "1X ARMA TU ENSALADA"
-    commands.push(
-      ...CMD.BOLD_ON,
-      ...encode(`${item.quantity}X ${getDisplayProductName(item.product.name).toUpperCase()}`),
-      ...CMD.BOLD_OFF
-    );
+    // Nombre del producto en mayúsculas y negrita
+    commands.push(...CMD.BOLD_ON);
+    commands.push(...encode(`${item.quantity}X ${getDisplayProductName(item.product.name).toUpperCase()}`));
+    commands.push(...CMD.BOLD_OFF);
 
-    // Si tiene tamaño, mostrarlo en paréntesis en la siguiente línea
+    // Tamaño si existe
     if (item.productSize?.name) {
       commands.push(...encode(`(${item.productSize.name.toUpperCase()})`));
     }
 
-    // Mostrar ingredientes (customizations) con guiones
+    // Ingredientes (customizations)
     if (item.customizations && item.customizations.length > 0) {
       item.customizations.forEach((c) => {
         commands.push(...encode(`- ${c.ingredient.name.toLowerCase()}`));
       });
     }
 
-    // Mostrar customLabel si existe con asterisco (como en el ejemplo)
+    // CustomLabel si existe (con asterisco)
     if (item.customLabel) {
       commands.push(...encode(`*${item.customLabel}`));
     }
@@ -116,20 +154,24 @@ export function generateKitchenOrderEscPos(
     commands.push(LF);
   });
 
+  // Línea separadora final
   commands.push(...encode(separator));
-  commands.push(...CMD.CENTER, ...CMD.BOLD_ON);
+
+  // "PREPARAR YA" centrado y negrita
+  commands.push(...CMD.CENTER);
+  commands.push(...CMD.BOLD_ON);
   commands.push(...encode("PREPARAR YA"));
   commands.push(...CMD.BOLD_OFF);
-  commands.push(LF, LF, ...CMD.FEED(3));
 
-  // Corte PARCIAL después de la comanda
+  // Alimentar papel y corte parcial
+  commands.push(...CMD.FEED(3));
   commands.push(...CMD.PARTIAL_CUT);
 
   return commands;
 }
 
 // ============================================
-// GENERADOR DE TICKET CLIENTE (PARTE 2) - CON FORMATO EXACTO
+// GENERADOR DE TICKET CLIENTE - COMPLETO
 // ============================================
 
 export function generateClientTicketEscPos(
@@ -142,43 +184,61 @@ export function generateClientTicketEscPos(
   options?: { openDrawer?: boolean; fullCut?: boolean; drawerNumber?: 1 | 2 }
 ): number[] {
   const config = PRINTER_CONFIGS["80mm"];
-  const separator = "-".repeat(config.charsPerLine) + "\n";
-  const doubleSeparator = "=".repeat(config.charsPerLine) + "\n";
+  const separator = "-".repeat(config.charsPerLine);
+  const doubleSeparator = "=".repeat(config.charsPerLine);
+  const commands: number[] = [];
 
-  const commands = [
-    ...CMD.RESET,
-    ...CMD.CENTER,
-    ...CMD.FONT_LARGE,
-    ...CMD.BOLD_ON,
-    ...encode("Tufiana"),
-    ...CMD.BOLD_OFF,
-    ...CMD.FONT_NORMAL,
-    ...encode("BARRA COTIDIANA"),
-    ...encode("AV. MIGUEL HIDALGO #276, COL CENTRO, ACAMBARO GTO."),
-    ...encode("Tel. 417 206 9111"),
-    ...encode(doubleSeparator),
-    ...CMD.LEFT,
-    ...CMD.BOLD_ON,
-    ...encode("DETALLE DEL PEDIDO"),
-    ...CMD.BOLD_OFF,
-    ...encode(separator),
-    ...encode(`Pedido: #${orderNumber || "---"}`),
-    ...encode(`Cliente: ${customerName || "Barra"}`),
-    ...encode(`Fecha: ${dateStr}`),
-    ...encode(`Pago: ${paymentMethodLabel}`),
-    ...encode(separator),
-    ...CMD.BOLD_ON,
-    ...encode("CONSUMO"),
-    ...CMD.BOLD_OFF,
-    ...encode(separator),
-  ];
+  // Inicializar impresora
+  commands.push(...CMD.RESET);
 
+  // Encabezado centrado
+  commands.push(...CMD.CENTER);
+
+  // Logo (texto "Tufiana" grande)
+  commands.push(...CMD.FONT_LARGE);
+  commands.push(...CMD.BOLD_ON);
+  commands.push(...encode("Tufiana"));
+  commands.push(...CMD.BOLD_OFF);
+
+  // Subtítulo
+  commands.push(...CMD.FONT_NORMAL);
+  commands.push(...encode("BARRA COTIDIANA"));
+
+  // Dirección y teléfono
+  commands.push(...encode("AV. MIGUEL HIDALGO #276, COL CENTRO, ACAMBARO GTO."));
+  commands.push(...encode("Tel. 417 206 9111"));
+
+  // Línea doble
+  commands.push(...encode(doubleSeparator));
+
+  // Detalle del pedido (izquierda)
+  commands.push(...CMD.LEFT);
+  commands.push(...CMD.BOLD_ON);
+  commands.push(...encode("DETALLE DEL PEDIDO"));
+  commands.push(...CMD.BOLD_OFF);
+  commands.push(...encode(separator));
+
+  // Información del pedido
+  commands.push(...encode(`Pedido: #${orderNumber || "---"}`));
+  commands.push(...encode(`Cliente: ${customerName || "Barra"}`));
+  commands.push(...encode(`Fecha: ${dateStr}`));
+  commands.push(...encode(`Pago: ${paymentMethodLabel}`));
+  commands.push(...encode(separator));
+
+  // Sección CONSUMO
+  commands.push(...CMD.BOLD_ON);
+  commands.push(...encode("CONSUMO"));
+  commands.push(...CMD.BOLD_OFF);
+  commands.push(...encode(separator));
+
+  // Items
   items.forEach((item) => {
-    // Formato: "- 1x Campesina"
-    const itemLine = `- ${item.quantity}x ${getDisplayProductName(item.product.name)}`;
-    commands.push(...CMD.BOLD_ON, ...encode(itemLine), ...CMD.BOLD_OFF);
+    // Línea del item con guión
+    commands.push(...CMD.BOLD_ON);
+    commands.push(...encode(`- ${item.quantity}x ${getDisplayProductName(item.product.name)}`));
+    commands.push(...CMD.BOLD_OFF);
 
-    // Si tiene tamaño, mostrarlo
+    // Tamaño si existe
     if (item.productSize?.name) {
       commands.push(...encode(`  (${item.productSize.name})`));
     }
@@ -193,34 +253,43 @@ export function generateClientTicketEscPos(
     }
 
     // Precio
-    const priceLine = `  - $${item.subtotal.toFixed(0)}`;
-    commands.push(...encode(priceLine));
+    commands.push(...encode(`  - $${item.subtotal.toFixed(0)}`));
   });
 
+  // Línea doble antes del total
   commands.push(...encode(doubleSeparator));
-  commands.push(...CMD.CENTER, ...CMD.FONT_LARGE, ...CMD.BOLD_ON);
+
+  // TOTAL centrado y grande
+  commands.push(...CMD.CENTER);
+  commands.push(...CMD.FONT_LARGE);
+  commands.push(...CMD.BOLD_ON);
   commands.push(...encode("TOTAL"));
   commands.push(...encode(`$${total.toFixed(0)}`));
-  commands.push(...CMD.BOLD_OFF, ...CMD.FONT_NORMAL);
+  commands.push(...CMD.BOLD_OFF);
+  commands.push(...CMD.FONT_NORMAL);
+
+  // Línea doble
   commands.push(...encode(doubleSeparator));
+
+  // Gracias
   commands.push(...CMD.CENTER);
   commands.push(...encode("GRACIAS POR VISITARNOS"));
-  commands.push(LF, LF);
+  commands.push(...CMD.LINE_FEED_2);
 
+  // Abrir cajón si es necesario
   if (options?.openDrawer) {
     commands.push(...(options.drawerNumber === 2 ? CMD.OPEN_DRAWER_2 : CMD.OPEN_DRAWER));
   }
 
+  // Alimentar papel y corte
   commands.push(...CMD.FEED(3));
-
-  // Corte COMPLETO al final del ticket
   commands.push(...CMD.FULL_CUT);
 
   return commands;
 }
 
 // ============================================
-// FUNCIÓN PARA IMPRIMIR AMBOS (COMANDA + TICKET)
+// FUNCIÓN PARA IMPRIMIR AMBOS
 // ============================================
 
 export function generateBothEscPos(
@@ -235,30 +304,13 @@ export function generateBothEscPos(
     drawerNumber?: 1 | 2;
   }
 ): number[] {
-  // Primero generar la comanda (con corte parcial al final)
-  const kitchenCommands = generateKitchenOrderEscPos(
-    items,
-    orderNumber,
-    customerName,
-    dateStr
-  );
+  const kitchenCommands = generateKitchenOrderEscPos(items, orderNumber, customerName, dateStr);
+  const clientCommands = generateClientTicketEscPos(items, total, orderNumber, customerName, dateStr, paymentMethodLabel, {
+    openDrawer: options?.openDrawer,
+    fullCut: true,
+    drawerNumber: options?.drawerNumber
+  });
 
-  // Luego generar el ticket del cliente (con corte completo al final)
-  const clientCommands = generateClientTicketEscPos(
-    items,
-    total,
-    orderNumber,
-    customerName,
-    dateStr,
-    paymentMethodLabel,
-    {
-      openDrawer: options?.openDrawer,
-      fullCut: true,
-      drawerNumber: options?.drawerNumber
-    }
-  );
-
-  // Combinar comandos: comanda + ticket
   return [...kitchenCommands, ...clientCommands];
 }
 
@@ -287,314 +339,27 @@ export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): st
     cashDrawer,
   } = config;
 
-  // Convertir comandos a texto plano para HTML
-  const text = commands
-    .map((byte) => {
-      if (byte === 0x0a) return "\n";
-      if (byte < 0x20 || byte > 0x7e) return "";
-      return String.fromCharCode(byte);
-    })
-    .join("")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
-  // Obtener URL base correcta para el logo
-  const baseUrl = typeof window !== "undefined"
-    ? window.location.origin
-    : "http://localhost:8080";
-  const logoUrl = `${baseUrl}/juliana-logo.png`;
-
-  // Detectar si es comanda (tiene "CLIENTE:" al inicio)
-  const isKitchen = text.includes("CLIENTE:") && !text.includes("Tufiana");
-
-  // Escapar texto para HTML
-  const escapedText = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\n/g, "<br>");
-
-  let html = "";
-
-  if (isKitchen) {
-    // HTML para COMANDA
-    html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { 
-      background: white; 
-      font-family: 'Courier New', monospace;
-      padding: 15px;
-    }
-    .ticket {
-      width: 58mm;
-      background: white;
-      border: 1px solid #000;
-      border-radius: 8px;
-      padding: 12px;
-    }
-    .header {
-      font-weight: bold;
-      margin-bottom: 8px;
-    }
-    .separator {
-      border-top: 1px dashed #000;
-      margin: 8px 0;
-    }
-    .item {
-      margin: 5px 0;
-    }
-    .item-name {
-      font-weight: bold;
-      font-size: 14px;
-    }
-    .ingredient {
-      margin-left: 10px;
-      font-size: 12px;
-    }
-    .footer {
-      text-align: center;
-      font-weight: bold;
-      margin-top: 10px;
-    }
-    pre { display: none; }
-  </style>
-</head>
-<body>
-  <div class="ticket">
-    ${escapedText.split('<br>').map(line => {
-      if (line.includes('CLIENTE:')) {
-        return `<div class="header">${line}</div>`;
-      }
-      if (line.includes('Hora:')) {
-        return `<div>${line}</div>`;
-      }
-      if (line === '-'.repeat(32)) {
-        return `<div class="separator"></div>`;
-      }
-      if (line.includes('X ')) {
-        return `<div class="item-name">${line}</div>`;
-      }
-      if (line.startsWith('(')) {
-        return `<div>${line}</div>`;
-      }
-      if (line.startsWith('- ')) {
-        return `<div class="ingredient">${line}</div>`;
-      }
-      if (line.startsWith('*')) {
-        return `<div class="ingredient" style="font-style:italic">${line}</div>`;
-      }
-      if (line.includes('PREPARAR YA')) {
-        return `<div class="footer">${line}</div>`;
-      }
-      return `<div>${line}</div>`;
-    }).join('')}
-  </div>
-</body>
-</html>`;
-  } else {
-    // HTML para TICKET CLIENTE (igual que antes)
-    html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { 
-      background: white; 
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      display: flex;
-      justify-content: center;
-      padding: 20px;
-    }
-    .ticket {
-      width: 80mm;
-      background: white;
-      border: 2px solid #000;
-      border-radius: 16px;
-      padding: 20px 15px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-    .logo-container {
-      text-align: center;
-      margin-bottom: 15px;
-    }
-    .logo {
-      max-width: 180px;
-      height: auto;
-      display: inline-block;
-    }
-    .business-name {
-      text-align: center;
-      font-size: 24px;
-      font-weight: 800;
-      letter-spacing: 1px;
-      margin: 5px 0 2px;
-      text-transform: uppercase;
-    }
-    .business-subtitle {
-      text-align: center;
-      font-size: 14px;
-      font-weight: 600;
-      letter-spacing: 1px;
-      margin-bottom: 10px;
-      text-transform: uppercase;
-    }
-    .business-address {
-      text-align: center;
-      font-size: 11px;
-      color: #333;
-      line-height: 1.4;
-      margin-bottom: 15px;
-    }
-    .double-line {
-      border-top: 3px double #000;
-      margin: 15px 0;
-    }
-    .single-line {
-      border-top: 1px solid #000;
-      margin: 10px 0;
-    }
-    .section-title {
-      font-weight: 700;
-      font-size: 14px;
-      text-transform: uppercase;
-      margin: 10px 0 5px;
-    }
-    .info-row {
-      display: flex;
-      justify-content: space-between;
-      margin: 5px 0;
-      font-size: 12px;
-    }
-    .info-label {
-      font-weight: 500;
-    }
-    .info-value {
-      font-weight: 700;
-    }
-    .item-row {
-      display: flex;
-      justify-content: space-between;
-      font-weight: 700;
-      margin: 8px 0 2px;
-      font-size: 13px;
-    }
-    .item-detail {
-      font-size: 11px;
-      color: #555;
-      margin-left: 10px;
-      margin-bottom: 8px;
-    }
-    .total-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 22px;
-      font-weight: 800;
-      margin: 15px 0;
-      padding: 10px 0;
-    }
-    .total-label {
-      text-transform: uppercase;
-    }
-    .total-amount {
-      font-size: 24px;
-    }
-    .footer {
-      text-align: center;
-      font-size: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-top: 15px;
-    }
-    pre { display: none; }
-  </style>
-</head>
-<body>
-  <div class="ticket">
-    <div class="logo-container">
-      <img class="logo" src="${logoUrl}" alt="Tufiana" onerror="this.style.display='none'">
-    </div>
-    
-    <div class="business-name">Tufiana</div>
-    <div class="business-subtitle">BARRA COTIDIANA</div>
-    <div class="business-address">
-      AV. MIGUEL HIDALGO #276, COL CENTRO,<br>
-      ACAMBARO GTO.<br>
-      Tel. 417 206 9111
-    </div>
-
-    <div class="double-line"></div>
-
-    <div class="section-title">DETALLE DEL PEDIDO</div>
-    
-    <div class="single-line"></div>
-
-    ${text.split('\n').map(line => {
-      if (line.includes('Pedido:')) {
-        const [_, value] = line.split(':');
-        return `<div class="info-row"><span class="info-label">Pedido</span><strong class="info-value">${value}</strong></div>`;
-      }
-      if (line.includes('Cliente:')) {
-        const [_, value] = line.split(':');
-        return `<div class="info-row"><span class="info-label">Cliente</span><strong class="info-value">${value}</strong></div>`;
-      }
-      if (line.includes('Fecha:')) {
-        const [_, value] = line.split(':');
-        return `<div class="info-row"><span class="info-label">Fecha</span><span class="info-value">${value}</span></div>`;
-      }
-      if (line.includes('Pago:')) {
-        const [_, value] = line.split(':');
-        return `<div class="info-row"><span class="info-label">Pago</span><strong class="info-value">${value}</strong></div>`;
-      }
-      if (line.includes('CONSUMO')) {
-        return `<div class="double-line"></div><div class="section-title">CONSUMO</div><div class="single-line"></div>`;
-      }
-      if (line.includes('- ') && line.includes('x ')) {
-        return `<div class="item-row"><span>${line}</span></div>`;
-      }
-      if (line.includes('  - ') && !line.includes('$')) {
-        return `<div class="item-detail">${line.trim()}</div>`;
-      }
-      if (line.includes('  - $')) {
-        return `<div class="item-detail" style="font-weight:bold">${line.trim()}</div>`;
-      }
-      if (line.includes('TOTAL')) {
-        return `<div class="double-line"></div>`;
-      }
-      if (line.includes('$') && !line.includes('-')) {
-        return `<div class="total-row"><span class="total-label">TOTAL</span><span class="total-amount">${line.trim()}</span></div>`;
-      }
-      if (line.includes('GRACIAS')) {
-        return `<div class="double-line"></div><div class="footer">${line.trim()}</div>`;
-      }
-      return '';
-    }).filter(Boolean).join('\n')}
-  </div>
-</body>
-</html>`;
+  // Convertir comandos a base64 correctamente
+  const uint8Array = new Uint8Array(commands);
+  let binary = '';
+  for (let i = 0; i < uint8Array.length; i++) {
+    binary += String.fromCharCode(uint8Array[i]);
   }
+  const commandsBase64 = btoa(binary);
 
-  const src = `data:text/html,${encodeURIComponent(html)}`;
-
+  // Construir URL con el formato que espera la app
   const params = new URLSearchParams();
-  params.set("srcTp", "uri");
-  params.set("srcObj", "html");
-  params.set("numCopies", "1");
-  params.set("src", src);
+  params.set("commands", commandsBase64);
   params.set("feed", String(feedLines));
   params.set("cut", autoCut);
-  params.set("drawer", cashDrawer ? "1" : "0");
-  params.set("size", isKitchen ? "58mm" : "80mm");
 
-  return `print://escpos.org/escpos/bt/print?${params.toString()}`;
+  if (cashDrawer) {
+    params.set("drawer", cashDrawer.drawerNumber.toString());
+    params.set("pulseOn", String(cashDrawer.pulseOn || 50));
+    params.set("pulseOff", String(cashDrawer.pulseOff || 250));
+  }
+
+  return `print://escpos.org/escpos/bt/${macAddress}?${params.toString()}`;
 }
 
 export function isEscPosAppAvailable(): boolean {
@@ -653,18 +418,17 @@ export async function printClientTicketEscPos(
   paymentMethodLabel: string = "Efectivo",
   options?: {
     openDrawer?: boolean;
-    fullCut?: boolean;
     drawerNumber?: 1 | 2;
   }
 ): Promise<boolean> {
   const commands = generateClientTicketEscPos(
     items, total, orderNumber, customerName, dateStr, paymentMethodLabel,
-    { openDrawer: options?.openDrawer, fullCut: options?.fullCut, drawerNumber: options?.drawerNumber }
+    { openDrawer: options?.openDrawer, fullCut: true, drawerNumber: options?.drawerNumber }
   );
 
   return printToEscPosApp(macAddress, commands, {
     feedLines: 2,
-    autoCut: options?.fullCut ? 'full' : 'partial',
+    autoCut: 'full',
     openDrawer: options?.openDrawer,
     drawerNumber: options?.drawerNumber || 2
   });
@@ -712,7 +476,7 @@ export async function printBothEscPos(
 }
 
 // ============================================
-// FUNCIONES DE COMPATIBILIDAD (NO USAR)
+// FUNCIONES DE COMPATIBILIDAD (MÍNIMAS)
 // ============================================
 
 export async function printToDevice(
@@ -734,28 +498,4 @@ export async function printMultipleToDevice(
   }>
 ): Promise<void> {
   throw new Error("printMultipleToDevice no soportado - usa printBothEscPos directamente");
-}
-
-export function printViaBrowser(): void {
-  throw new Error("printViaBrowser deshabilitado");
-}
-
-export function generateClientTicketHTML(
-  items: CartItem[],
-  total: number,
-  orderNumber: number | null,
-  customerName: string,
-  dateStr: string,
-  paymentMethodLabel: string = "Efectivo"
-): string {
-  throw new Error("generateClientTicketHTML no soportado - usa generateClientTicketEscPos");
-}
-
-export function generateKitchenOrderHTML(
-  items: CartItem[],
-  orderNumber: number | null,
-  customerName: string,
-  dateStr: string
-): string {
-  throw new Error("generateKitchenOrderHTML no soportado - usa generateKitchenOrderEscPos");
 }
