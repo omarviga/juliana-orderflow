@@ -339,3 +339,114 @@ export async function printBothEscPos(
     drawerNumber: options?.drawerNumber || 2
   });
 }
+
+// ============================================
+// COMPATIBILIDAD CON MÓDULOS EXISTENTES (SOLO ESC/POS)
+// ============================================
+
+function htmlToEscPosCommands(
+  htmlContent: string,
+  printerSize: "80mm" | "58mm",
+  options?: { openDrawer?: boolean; fullCut?: boolean }
+): number[] {
+  const text = htmlContent
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line.length > 0)
+    .join("\n");
+
+  const lines = text.split("\n").map((line) => `${line}\n`);
+  const commands: number[] = [...CMD.RESET, ...(printerSize === "58mm" ? CMD.FONT_NORMAL : CMD.FONT_NORMAL)];
+  lines.forEach((line) => commands.push(...Array.from(textEncoder.encode(line))));
+  commands.push(...CMD.FEED(2));
+  if (options?.openDrawer) commands.push(...CMD.OPEN_DRAWER_2);
+  commands.push(...(options?.fullCut ? CMD.FULL_CUT : CMD.PARTIAL_CUT));
+  return commands;
+}
+
+export async function printToDevice(
+  deviceAddress: string,
+  htmlContent: string,
+  printerSize: "80mm" | "58mm",
+  options?: { openDrawer?: boolean; fullCut?: boolean }
+): Promise<void> {
+  const commands = htmlToEscPosCommands(htmlContent, printerSize, options);
+  const ok = await printToEscPosApp(deviceAddress, commands, {
+    feedLines: 2,
+    autoCut: options?.fullCut ? "full" : "partial",
+    openDrawer: options?.openDrawer,
+    drawerNumber: 2,
+  });
+  if (!ok) throw new Error("No se pudo enviar a ESC/POS Print Service");
+}
+
+export async function printMultipleToDevice(
+  deviceAddress: string,
+  jobs: Array<{
+    htmlContent?: string;
+    escPosCommands?: number[];
+    printerSize: "80mm" | "58mm";
+    options?: { openDrawer?: boolean; fullCut?: boolean };
+  }>
+): Promise<void> {
+  const combined: number[] = [];
+  jobs.forEach((job) => {
+    if (job.escPosCommands && job.escPosCommands.length > 0) {
+      combined.push(...job.escPosCommands);
+      return;
+    }
+    if (job.htmlContent) {
+      combined.push(...htmlToEscPosCommands(job.htmlContent, job.printerSize, job.options));
+    }
+  });
+  const ok = await printToEscPosApp(deviceAddress, combined, { feedLines: 2, autoCut: "partial" });
+  if (!ok) throw new Error("No se pudo enviar lote a ESC/POS Print Service");
+}
+
+export async function printToCups(): Promise<void> {
+  throw new Error("printToCups deshabilitado: esta instalación usa solo ESC/POS.");
+}
+
+export function printViaBrowser(): void {
+  throw new Error("printViaBrowser deshabilitado: esta instalación usa solo ESC/POS.");
+}
+
+export function generateClientTicketHTML(
+  items: CartItem[],
+  total: number,
+  orderNumber: number | null,
+  customerName: string,
+  dateStr: string,
+  paymentMethodLabel: string = "Efectivo"
+): string {
+  const itemLines = items
+    .map((item) => `${item.quantity}x ${getDisplayProductName(item.product.name)} ${item.productSize ? `(${item.productSize.name})` : ""}  $${item.subtotal.toFixed(0)}`)
+    .join("\n");
+  return `<html><head><meta charset="UTF-8"></head><body><pre>JULIANA\nBARRA COTIDIANA\n------------------------------\nPedido: #${orderNumber || "---"}\nCliente: ${customerName || "Barra"}\nFecha: ${dateStr}\nPago: ${paymentMethodLabel}\n------------------------------\n${itemLines}\n------------------------------\nTOTAL: $${total.toFixed(0)}\n</pre></body></html>`;
+}
+
+export function generateKitchenOrderHTML(
+  items: CartItem[],
+  orderNumber: number | null,
+  customerName: string,
+  dateStr: string
+): string {
+  const itemLines = items
+    .map((item) => {
+      const custom = item.customLabel ? `\n  - ${item.customLabel}` : "";
+      const note = item.kitchenNote ? `\n  - Nota: ${item.kitchenNote}` : "";
+      return `${item.quantity}x ${getDisplayProductName(item.product.name)}${item.productSize ? ` (${item.productSize.name})` : ""}${custom}${note}`;
+    })
+    .join("\n");
+
+  return `<html><head><meta charset="UTF-8"></head><body><pre>COMANDA #${orderNumber || "---"}\nCLIENTE: ${(customerName || "Barra").toUpperCase()}\nHORA: ${dateStr}\n================================\n${itemLines}\n</pre></body></html>`;
+}
