@@ -774,9 +774,14 @@ function bytesToBase64(bytes: number[]): string {
 }
 
 function printUrlSupportsAndroidEscPosApp(): boolean {
-  if (typeof navigator === "undefined") return false;
+  if (typeof navigator === "undefined" || typeof window === "undefined") return false;
   const ua = navigator.userAgent || "";
-  return /android/i.test(ua);
+  if (/android/i.test(ua)) return true;
+
+  // Algunas tablets Android con "sitio de escritorio" ocultan "Android" en el UA.
+  const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+  const touchPoints = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;
+  return coarsePointer || touchPoints > 1;
 }
 
 async function printMultipleViaEscPosAndroidApp(
@@ -798,30 +803,31 @@ async function printMultipleViaEscPosAndroidApp(
     throw new Error("Fallback print://escpos no disponible fuera de Android");
   }
 
-  const bytes = buildEscPosBytesFromJobs(jobs);
-  if (bytes.length === 0) {
-    throw new Error("No hay contenido para imprimir en fallback Android");
+  const htmlPages = jobs
+    .map((job) => (job.htmlContent ? job.htmlContent : ""))
+    .filter((page) => page.trim().length > 0);
+
+  if (htmlPages.length === 0) {
+    throw new Error("No hay HTML imprimible para ESC/POS Print Service.");
   }
 
-  const textPayload = jobs
-    .map((job) => (job.htmlContent ? htmlToPlainText(job.htmlContent) : ""))
-    .filter((line) => line.trim().length > 0)
-    .join("\n\n");
-
-  const feedLines = 3;
+  const combinedHtml = htmlPages.join('<div style="page-break-after: always;"></div>');
+  const dataUri = `data:text/html,${encodeURIComponent(combinedHtml)}`;
   const openDrawer = jobs.some((job) => job.options?.openDrawer);
   const fullCut = jobs.some((job) => job.options?.fullCut);
   const printerSize = jobs[0]?.printerSize || "80mm";
+
   const params = new URLSearchParams();
-  params.set("raw", bytesToBase64(bytes));
-  params.set("encoding", "base64");
-  params.set("text", textPayload);
-  params.set("feed", String(feedLines));
+  params.set("srcTp", "uri");
+  params.set("srcObj", "html");
+  params.set("numCopies", "1");
+  params.set("src", dataUri);
+  params.set("feed", "3");
   params.set("cut", fullCut ? "full" : "partial");
   params.set("drawer", openDrawer ? "1" : "0");
   params.set("size", printerSize);
 
-  // Formato solicitado por ESC POS Print Service: print://escpos.org/escpos/bt/
+  // Formato App Links LoopedLabs: print://escpos.org/escpos/bt/print?srcTp=uri&srcObj=html&src=...
   const schemeUrl = `print://escpos.org/escpos/bt/print?${params.toString()}`;
   window.location.href = schemeUrl;
 }

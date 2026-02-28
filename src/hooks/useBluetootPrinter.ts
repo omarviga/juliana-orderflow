@@ -45,6 +45,15 @@ const DEFAULT_PREFERENCES: PrinterPreferences = {
   fullCutOn80mm: true,
 };
 
+function isAndroidEscPosAppEnvironment(): boolean {
+  if (typeof navigator === "undefined" || typeof window === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  if (/android/i.test(ua)) return true;
+  const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+  const touchPoints = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;
+  return coarsePointer || touchPoints > 1;
+}
+
 function enforceServerOnlyPreferences(prefs: PrinterPreferences): PrinterPreferences {
   if (!FORCE_ESC_POS_ONLY) return prefs;
   return {
@@ -488,8 +497,9 @@ export function useBluetootPrinter() {
         try {
           const clientPrinter = getClientPrinter();
           const useBluetooth = preferences.useBluetoothIfAvailable && clientPrinter?.address;
+          const useAndroidEscPosApp = isAndroidEscPosAppEnvironment();
 
-          if (useBluetooth && clientPrinter?.address) {
+          if (useBluetooth && clientPrinter?.address && !useAndroidEscPosApp) {
             const escPosCommands = generateClientTicketEscPos(
               items,
               total,
@@ -591,9 +601,10 @@ export function useBluetootPrinter() {
         try {
           const kitchenPrinter = getKitchenPrinter();
           const useBluetooth = preferences.useBluetoothIfAvailable && kitchenPrinter?.address;
+          const useAndroidEscPosApp = isAndroidEscPosAppEnvironment();
           const printerSize = kitchenPrinter?.type || "58mm";
 
-          if (useBluetooth && kitchenPrinter?.address) {
+          if (useBluetooth && kitchenPrinter?.address && !useAndroidEscPosApp) {
             const escPosCommands = generateKitchenOrderEscPos(
               items,
               orderNumber,
@@ -646,6 +657,31 @@ export function useBluetootPrinter() {
       const printJob = async () => {
         const clientPrinter = getClientPrinter();
         const kitchenPrinter = getKitchenPrinter();
+        const useAndroidEscPosApp = isAndroidEscPosAppEnvironment();
+
+        if (useAndroidEscPosApp) {
+          const kitchenHtml = generateKitchenOrderHTML(items, orderNumber, customerName, dateStr);
+          const clientHtml = generateClientTicketHTML(
+            items,
+            total,
+            orderNumber,
+            customerName,
+            dateStr,
+            paymentMethodLabel
+          );
+          const combinedHtml = `${kitchenHtml}<div style="page-break-after: always;"></div>${clientHtml}`;
+          await printWithPreferences(
+            combinedHtml,
+            "Comanda + Ticket",
+            "80mm",
+            clientPrinter,
+            {
+              openDrawer: preferences.openDrawerOn80mm,
+              fullCut: preferences.fullCutOn80mm,
+            }
+          );
+          return;
+        }
 
         // Prioritize Bluetooth if available and selected
         if (preferences.useBluetoothIfAvailable) {
@@ -716,7 +752,7 @@ export function useBluetootPrinter() {
 
       await enqueuePrintJob(printJob);
     },
-    [enqueuePrintJob, getClientPrinter, getKitchenPrinter, preferences]
+    [enqueuePrintJob, getClientPrinter, getKitchenPrinter, preferences, printWithPreferences]
   );
 
   // Imprimir ambos documentos (cliente y cocina)
