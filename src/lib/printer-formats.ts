@@ -812,14 +812,24 @@ async function printMultipleViaEscPosAndroidApp(
   }
 
   const combinedText = plainTextPages.join("\n\n------------------------------\n\n");
-  const dataUri = `data:text/plain;charset=utf-8,${encodeURIComponent(combinedText)}`;
+  const thermalHtml = `
+    <html>
+      <head>
+        <meta charset="UTF-8" />
+      </head>
+      <body style="margin:0;padding:8px;font-family:monospace;font-size:12px;line-height:1.25;">
+        <pre style="margin:0;white-space:pre-wrap;">${escapeHtml(combinedText)}</pre>
+      </body>
+    </html>
+  `.trim();
+  const dataUri = `data:text/html,${encodeURIComponent(thermalHtml)}`;
   const openDrawer = jobs.some((job) => job.options?.openDrawer);
   const fullCut = jobs.some((job) => job.options?.fullCut);
   const printerSize = jobs[0]?.printerSize || "80mm";
 
   const params = new URLSearchParams();
   params.set("srcTp", "uri");
-  params.set("srcObj", "txt");
+  params.set("srcObj", "html");
   params.set("numCopies", "1");
   params.set("src", dataUri);
   params.set("feed", "3");
@@ -827,7 +837,7 @@ async function printMultipleViaEscPosAndroidApp(
   params.set("drawer", openDrawer ? "1" : "0");
   params.set("size", printerSize);
 
-  // Formato App Links LoopedLabs: print://escpos.org/escpos/bt/print?srcTp=uri&srcObj=txt&src=...
+  // Formato App Links LoopedLabs: print://escpos.org/escpos/bt/print?srcTp=uri&srcObj=html&src='data:text/html,...'
   const schemeUrl = `print://escpos.org/escpos/bt/print?${params.toString()}`;
   window.location.href = schemeUrl;
 }
