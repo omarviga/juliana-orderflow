@@ -1,14 +1,16 @@
 // useBluetootPrinter.ts - VERSIÓN SOLO ESC/POS
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import type { CartItem } from "@/types/pos";
 import type { CashRegisterSale } from "@/lib/cash-register";
+import type { CashCutCountSummary, CashCutDetails } from "@/lib/printer-formats";
 import {
   printClientTicketEscPos,
   printKitchenOrderEscPos,
   printBothEscPos,
   isEscPosAppAvailable,
+  printToDevice,
 } from "@/lib/printer-formats";
 
 // ============================================
@@ -158,7 +160,7 @@ export function useBluetootPrinter() {
   }, []);
 
   // Procesar cola de impresión
-  useState(() => {
+  useEffect(() => {
     const processQueue = async () => {
       if (printQueue.length === 0 || isPrinting) return;
 
@@ -176,8 +178,8 @@ export function useBluetootPrinter() {
       }
     };
 
-    processQueue();
-  });
+    void processQueue();
+  }, [printQueue, isPrinting]);
 
   // ============================================
   // IMPRESIÓN DE TICKETS
@@ -307,6 +309,70 @@ export function useBluetootPrinter() {
     await enqueuePrintJob(job);
   }, [macAddress, preferences, enqueuePrintJob]);
 
+  const printKitchenAndClientCombined = useCallback(async (
+    items: CartItem[],
+    total: number,
+    orderNumber: number | null,
+    customerName: string,
+    dateStr: string,
+    paymentMethodLabel: string = "Efectivo"
+  ) => {
+    await printBoth(items, total, orderNumber, customerName, dateStr, paymentMethodLabel);
+  }, [printBoth]);
+
+  const printCashCutTicket = useCallback(async (
+    sales: CashRegisterSale[],
+    generatedAt: string,
+    title: string = "CORTE DE CAJA",
+    countSummary?: CashCutCountSummary,
+    details?: CashCutDetails
+  ) => {
+    const job = async () => {
+      const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
+      const cashSales = sales.filter((sale) => sale.paymentMethod === "efectivo").reduce((sum, sale) => sum + sale.total, 0);
+      const cardSales = sales.filter((sale) => sale.paymentMethod === "tarjeta").reduce((sum, sale) => sum + sale.total, 0);
+      const rows = sales
+        .map((sale) => {
+          const hour = new Date(sale.createdAt).toLocaleTimeString("es-MX", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          });
+          return `${hour}  #${sale.orderNumber}  ${sale.paymentMethod.toUpperCase()}  $${sale.total.toFixed(0)}`;
+        })
+        .join("\n");
+
+      const countSection = countSummary
+        ? `\nCONTEO EFECTIVO\nEsperado: $${countSummary.expectedCash.toFixed(0)}\nContado: $${countSummary.countedCash.toFixed(0)}\nDiferencia: $${countSummary.difference.toFixed(0)}\n`
+        : "";
+
+      const openingSection = details?.opening
+        ? `\nAPERTURA: $${details.opening.amount.toFixed(0)}\n${details.opening.note || "Apertura"}\n`
+        : "";
+
+      const text = `${title}
+${generatedAt}
+--------------------------------
+VENTAS: ${sales.length}
+EFECTIVO: $${cashSales.toFixed(0)}
+TARJETA: $${cardSales.toFixed(0)}
+TOTAL: $${totalSales.toFixed(0)}
+${countSection}${openingSection}
+DETALLE
+${rows}
+`;
+
+      const html = `<html><head><meta charset="UTF-8"></head><body><pre>${text}</pre></body></html>`;
+      await printToDevice(macAddress, html, "80mm", {
+        openDrawer: preferences.openDrawerOn80mm,
+        fullCut: preferences.fullCutOn80mm,
+      });
+      toast.success("Corte de caja enviado a impresora");
+    };
+
+    await enqueuePrintJob(job);
+  }, [enqueuePrintJob, macAddress, preferences.openDrawerOn80mm, preferences.fullCutOn80mm]);
+
   // ============================================
   // FUNCIONES PARA COMPATIBILIDAD (no hacen nada)
   // ============================================
@@ -335,9 +401,7 @@ export function useBluetootPrinter() {
     // No hace nada
   }, []);
 
-  const assignPrinterType = useCallback(() => {
-    // No hace nada
-  }, []);
+  const assignPrinterType = updatePrinterType;
 
   const removePrinter = useCallback(() => {
     // No hace nada
@@ -375,6 +439,8 @@ export function useBluetootPrinter() {
     printClientTicket,
     printKitchenOrder,
     printBoth,
+    printKitchenAndClientCombined,
+    printCashCutTicket,
 
     // Funciones de compatibilidad (no hacen nada)
     scanForPrinters,

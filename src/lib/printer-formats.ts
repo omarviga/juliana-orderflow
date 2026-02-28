@@ -34,7 +34,9 @@ const getDisplayProductName = (name: string) =>
 
 function isAndroid(): boolean {
   if (typeof navigator === "undefined") return false;
-  return /android/i.test(navigator.userAgent);
+  if (/android/i.test(navigator.userAgent)) return true;
+  const coarse = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)")?.matches;
+  return Boolean(coarse && navigator.maxTouchPoints > 0);
 }
 
 // ============================================
@@ -202,6 +204,7 @@ export interface PrintPayload {
 }
 
 export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): string {
+  void macAddress;
   const { commands, config = {} } = payload;
   const {
     feedLines = 2,
@@ -209,20 +212,31 @@ export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): st
     cashDrawer,
   } = config;
 
-  const commandsBase64 = btoa(String.fromCharCode(...commands));
-  const url = new URL(`print://escpos.org/escpos/bt/${macAddress}`);
+  const decoded = commands
+    .map((byte) => {
+      if (byte === 0x0a) return "\n";
+      if (byte < 0x20 || byte > 0x7e) return "";
+      return String.fromCharCode(byte);
+    })
+    .join("")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 
-  url.searchParams.append('commands', commandsBase64);
-  url.searchParams.append('feed', feedLines.toString());
-  url.searchParams.append('cut', autoCut);
+  const html = `<html><head><meta charset="UTF-8"></head><body style="margin:0;padding:8px;font-family:monospace;font-size:12px;line-height:1.25;"><pre style="margin:0;white-space:pre-wrap;">${decoded.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre></body></html>`;
+  const src = `data:text/html,${encodeURIComponent(html)}`;
+  const drawer = cashDrawer ? "1" : "0";
 
-  if (cashDrawer) {
-    url.searchParams.append('drawer', cashDrawer.drawerNumber.toString());
-    url.searchParams.append('drawerOn', (cashDrawer.pulseOn || 50).toString());
-    url.searchParams.append('drawerOff', (cashDrawer.pulseOff || 250).toString());
-  }
+  const params = new URLSearchParams();
+  params.set("srcTp", "uri");
+  params.set("srcObj", "html");
+  params.set("numCopies", "1");
+  params.set("src", src);
+  params.set("feed", String(feedLines));
+  params.set("cut", autoCut);
+  params.set("drawer", drawer);
+  params.set("size", "80mm");
 
-  return url.toString();
+  return `print://escpos.org/escpos/bt/print?${params.toString()}`;
 }
 
 export function isEscPosAppAvailable(): boolean {
@@ -410,10 +424,6 @@ export async function printMultipleToDevice(
   });
   const ok = await printToEscPosApp(deviceAddress, combined, { feedLines: 2, autoCut: "partial" });
   if (!ok) throw new Error("No se pudo enviar lote a ESC/POS Print Service");
-}
-
-export async function printToCups(): Promise<void> {
-  throw new Error("printToCups deshabilitado: esta instalación usa solo ESC/POS.");
 }
 
 export function printViaBrowser(): void {
