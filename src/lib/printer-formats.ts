@@ -615,7 +615,19 @@ export async function printMultipleToDevice(
   }
 
   const webBluetoothSupported = typeof navigator !== "undefined" && !!navigator.bluetooth;
+  const isAndroid = printUrlSupportsAndroidEscPosApp();
   const errors: string[] = [];
+
+  if (isAndroid) {
+    try {
+      await printMultipleViaEscPosAndroidApp(jobs);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error desconocido en fallback Android";
+      errors.push(`Fallback Android: ${message}`);
+      console.warn("Fallback Android falló. Intentando Web Bluetooth...", error);
+    }
+  }
 
   if (webBluetoothSupported) {
     try {
@@ -624,18 +636,9 @@ export async function printMultipleToDevice(
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error desconocido en Web Bluetooth";
       errors.push(`Web Bluetooth: ${message}`);
-      console.warn("Web Bluetooth falló. Intentando fallback ESC/POS app...", error);
     }
   } else {
     errors.push("Web Bluetooth no disponible");
-  }
-
-  try {
-    await printMultipleViaEscPosAndroidApp(jobs);
-    return;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Error desconocido en fallback Android";
-    errors.push(`Fallback Android: ${message}`);
   }
 
   throw new Error(`No se pudo imprimir por ESC/POS. ${errors.join(" | ")}`);
