@@ -222,7 +222,24 @@ export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): st
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  const html = `<html><head><meta charset="UTF-8"></head><body style="margin:0;padding:8px;font-family:monospace;font-size:12px;line-height:1.25;"><pre style="margin:0;white-space:pre-wrap;">${decoded.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre></body></html>`;
+  const isKitchenTicket = /COMANDA\s*#/i.test(decoded);
+  const logoUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin.replace(/\/$/, "")}/juliana-logo.png`
+      : "/juliana-logo.png";
+  const safeDecoded = decoded
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  const html = `<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+  body{margin:0;padding:10px;font-family:'Segoe UI',Tahoma,sans-serif;background:#fff;color:#111}
+  .ticket{border:1px solid #ddd;border-radius:10px;padding:10px}
+  .logo-wrap{text-align:center;margin-bottom:8px}
+  .logo{max-width:160px;height:auto}
+  .title{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;text-align:center;margin:4px 0 8px}
+  pre{margin:0;white-space:pre-wrap;font-family:'Courier New',monospace;font-size:12px;line-height:1.25}
+  </style></head><body><div class="ticket">${isKitchenTicket ? "" : `<div class="logo-wrap"><img class="logo" src="${logoUrl}" alt="Juliana"></div><div class="title">Ticket Cliente</div>`}<pre>${safeDecoded}</pre></div></body></html>`;
   const src = `data:text/html,${encodeURIComponent(html)}`;
   const drawer = cashDrawer ? "1" : "0";
 
@@ -438,10 +455,43 @@ export function generateClientTicketHTML(
   dateStr: string,
   paymentMethodLabel: string = "Efectivo"
 ): string {
-  const itemLines = items
-    .map((item) => `${item.quantity}x ${getDisplayProductName(item.product.name)} ${item.productSize ? `(${item.productSize.name})` : ""}  $${item.subtotal.toFixed(0)}`)
-    .join("\n");
-  return `<html><head><meta charset="UTF-8"></head><body><pre>JULIANA\nBARRA COTIDIANA\n------------------------------\nPedido: #${orderNumber || "---"}\nCliente: ${customerName || "Barra"}\nFecha: ${dateStr}\nPago: ${paymentMethodLabel}\n------------------------------\n${itemLines}\n------------------------------\nTOTAL: $${total.toFixed(0)}\n</pre></body></html>`;
+  const origin = typeof window !== "undefined" ? window.location.origin.replace(/\/$/, "") : "";
+  const logoUrl = `${origin}/juliana-logo.png`;
+  const renderedItems = items
+    .map((item) => {
+      const name = `${item.quantity}x ${getDisplayProductName(item.product.name)}${item.productSize ? ` (${item.productSize.name})` : ""}`;
+      const details = item.customLabel ? `<div class="detail">- ${item.customLabel}</div>` : "";
+      return `<div class="row"><span>${name}</span><strong>$${item.subtotal.toFixed(0)}</strong></div>${details}`;
+    })
+    .join("");
+
+  return `<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+  *{box-sizing:border-box}
+  body{margin:0;padding:10px;background:#fff;font-family:'Segoe UI',Tahoma,sans-serif;color:#111}
+  .ticket{border:1px solid #d9d9d9;border-radius:12px;padding:10px}
+  .logo-wrap{text-align:center;margin-bottom:8px}
+  .logo{max-width:170px;height:auto}
+  .subtitle{text-align:center;font-size:11px;font-weight:700;letter-spacing:.08em;margin-bottom:8px}
+  .meta{border:1px dashed #bbb;border-radius:8px;padding:8px;font-size:12px;margin-bottom:8px}
+  .meta-line{display:flex;justify-content:space-between;margin:2px 0}
+  .items{border-top:1px dashed #bbb;border-bottom:1px dashed #bbb;padding:8px 0}
+  .row{display:flex;justify-content:space-between;gap:8px;margin:4px 0;font-size:12px}
+  .detail{font-size:11px;color:#555;margin:0 0 4px 8px}
+  .total{margin-top:8px;border:2px solid #111;border-radius:8px;padding:8px;display:flex;justify-content:space-between;font-size:18px;font-weight:800}
+  .footer{text-align:center;font-size:11px;color:#444;margin-top:8px}
+  </style></head><body><div class="ticket">
+  <div class="logo-wrap"><img class="logo" src="${logoUrl}" alt="Juliana"></div>
+  <div class="subtitle">BARRA COTIDIANA</div>
+  <div class="meta">
+    <div class="meta-line"><span>Pedido</span><strong>#${orderNumber || "---"}</strong></div>
+    <div class="meta-line"><span>Cliente</span><strong>${customerName || "Barra"}</strong></div>
+    <div class="meta-line"><span>Fecha</span><span>${dateStr}</span></div>
+    <div class="meta-line"><span>Pago</span><strong>${paymentMethodLabel}</strong></div>
+  </div>
+  <div class="items">${renderedItems}</div>
+  <div class="total"><span>TOTAL</span><span>$${total.toFixed(0)}</span></div>
+  <div class="footer">Gracias por tu visita</div>
+  </div></body></html>`;
 }
 
 export function generateKitchenOrderHTML(
