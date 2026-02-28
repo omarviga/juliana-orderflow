@@ -872,18 +872,14 @@ export default function SettingsPage() {
                       Usar Bluetooth
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      Envía datos directamente a impresoras
+                      Obligatorio en esta instalación (ESC/POS).
                     </p>
                   </div>
                   <Switch
                     id="use-bluetooth"
-                    checked={preferences.useBluetoothIfAvailable}
-                    onCheckedChange={(checked) =>
-                      savePreferences({
-                        ...preferences,
-                        useBluetoothIfAvailable: checked,
-                      })
-                    }
+                    checked
+                    disabled
+                    aria-disabled="true"
                   />
                 </div>
 
@@ -893,18 +889,14 @@ export default function SettingsPage() {
                       Fallback a Navegador
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      Si falla Bluetooth, intenta por navegador
+                      Deshabilitado: esta instalación usa solo ESC/POS por Bluetooth.
                     </p>
                   </div>
                   <Switch
                     id="fallback"
-                    checked={preferences.fallbackToWeb}
-                    onCheckedChange={(checked) =>
-                      savePreferences({
-                        ...preferences,
-                        fallbackToWeb: checked,
-                      })
-                    }
+                    checked={false}
+                    disabled
+                    aria-disabled="true"
                   />
                 </div>
 

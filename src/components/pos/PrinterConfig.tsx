@@ -20,7 +20,7 @@ import {
 import { Bluetooth, Printer, RefreshCw, TestTube, Trash2, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
-import { printToCups, printToDevice, printViaBrowser } from "@/lib/printer-formats";
+import { printToCups, printToDevice } from "@/lib/printer-formats";
 import type { PrinterDevice } from "@/types/printer";
 
 const CUPS_PRINTER_URL = import.meta.env.VITE_CUPS_PRINTER_URL?.trim();
@@ -60,13 +60,6 @@ export function PrinterConfig() {
     savePreferences({
       ...preferences,
       useBluetoothIfAvailable: !preferences.useBluetoothIfAvailable,
-    });
-  };
-
-  const handleToggleFallback = () => {
-    savePreferences({
-      ...preferences,
-      fallbackToWeb: !preferences.fallbackToWeb,
     });
   };
 
@@ -120,7 +113,7 @@ export function PrinterConfig() {
             return;
           } catch (error) {
             console.error("Error de prueba por Bluetooth:", error);
-            if (!preferences.fallbackToWeb && !CUPS_PRINTER_URL) {
+            if (!CUPS_PRINTER_URL) {
               throw error;
             }
           }
@@ -133,14 +126,10 @@ export function PrinterConfig() {
             return;
           } catch (error) {
             console.error("Error de prueba por CUPS:", error);
-            if (!preferences.fallbackToWeb) {
-              throw error;
-            }
+            throw error;
           }
         }
-
-        printViaBrowser(testHtml, `Prueba ${printer.name}`);
-        toast.success(`Prueba enviada a ${printer.name}`, { id: toastId });
+        throw new Error("No hay ruta de impresión ESC/POS disponible.");
       } catch (error) {
         console.error("Error en prueba:", error);
         toast.error(
@@ -316,8 +305,9 @@ export function PrinterConfig() {
               </Label>
               <Switch
                 id="use-bluetooth"
-                checked={preferences.useBluetoothIfAvailable}
-                onCheckedChange={handleToggleBluetooth}
+                checked
+                disabled
+                aria-disabled="true"
               />
             </div>
 
@@ -325,11 +315,7 @@ export function PrinterConfig() {
               <Label htmlFor="fallback" className="font-medium">
                 Fallback a navegador
               </Label>
-              <Switch
-                id="fallback"
-                checked={preferences.fallbackToWeb}
-                onCheckedChange={handleToggleFallback}
-              />
+              <Switch id="fallback" checked={false} disabled aria-disabled="true" />
             </div>
 
             {clientPrinter && (

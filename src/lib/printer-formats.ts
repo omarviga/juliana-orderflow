@@ -610,38 +610,70 @@ export async function printMultipleToDevice(
     };
   }>
 ): Promise<void> {
-  if (!navigator.bluetooth) {
-    throw new Error("Web Bluetooth API no disponible en este navegador");
-  }
-
   if (jobs.length === 0) {
     return;
+  }
+
+  const webBluetoothSupported = typeof navigator !== "undefined" && !!navigator.bluetooth;
+  const errors: string[] = [];
+
+  if (webBluetoothSupported) {
+    try {
+      await printMultipleToDeviceViaWebBluetooth(deviceAddress, jobs);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error desconocido en Web Bluetooth";
+      errors.push(`Web Bluetooth: ${message}`);
+      console.warn("Web Bluetooth falló. Intentando fallback ESC/POS app...", error);
+    }
+  } else {
+    errors.push("Web Bluetooth no disponible");
+  }
+
+  try {
+    await printMultipleViaEscPosAndroidApp(jobs);
+    return;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Error desconocido en fallback Android";
+    errors.push(`Fallback Android: ${message}`);
+  }
+
+  throw new Error(`No se pudo imprimir por ESC/POS. ${errors.join(" | ")}`);
+}
+
+async function printMultipleToDeviceViaWebBluetooth(
+  _deviceAddress: string,
+  jobs: Array<{
+    htmlContent?: string;
+    escPosCommands?: number[];
+    printerSize: "80mm" | "58mm";
+    options?: {
+      openDrawer?: boolean;
+      fullCut?: boolean;
+    };
+  }>
+): Promise<void> {
+  if (!navigator.bluetooth) {
+    throw new Error("Web Bluetooth API no disponible en este navegador");
   }
 
   try {
     let device;
 
-    // Intenta obtener el dispositivo por su dirección si has sido emparejado antes
     try {
       const pairedDevices = await navigator.bluetooth.getAvailability?.();
       if (pairedDevices) {
-        // Android - intenta usar dispositivo por su dirección/ID
         device = await navigator.bluetooth.requestDevice({
-          filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }], // Bluetooth Serial Port Profile
+          filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }],
           acceptAllDevices: false,
         });
       }
-    } catch (e) {
-      // No se pudo obtener por dirección, solicita al usuario
+    } catch {
       device = await navigator.bluetooth.requestDevice({
         filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }],
-        optionalServices: ["00001101-0000-1000-8000-00805f9b34fb", "0000180a-0000-1000-8000-00805f9b34fb"], // Device Information
+        optionalServices: ["00001101-0000-1000-8000-00805f9b34fb", "0000180a-0000-1000-8000-00805f9b34fb"],
         acceptAllDevices: false,
       });
-    }
-
-    if (!device) {
-      throw new Error("No se seleccionó dispositivo");
     }
 
     console.log("Dispositivo Bluetooth seleccionado:", device.name, device.id);
@@ -674,18 +706,7 @@ export async function printMultipleToDevice(
       }
     }
 
-    // Convertir todos los HTML a datos imprimibles en un solo trabajo.
-    const printData = jobs.flatMap((job, index) => {
-      if (job.escPosCommands) {
-        return job.escPosCommands;
-      }
-      if (job.htmlContent) {
-        return htmlToEscPosCommands(job.htmlContent, job.printerSize, job.options, {
-          includeInit: index === 0,
-        });
-      }
-      return [];
-    });
+    const printData = buildEscPosBytesFromJobs(jobs);
 
     console.log("Enviando", printData.length, "bytes a la impresora");
 
@@ -717,6 +738,89 @@ export async function printMultipleToDevice(
     console.error("Error de impresión:", error);
     throw error;
   }
+}
+
+function buildEscPosBytesFromJobs(
+  jobs: Array<{
+    htmlContent?: string;
+    escPosCommands?: number[];
+    printerSize: "80mm" | "58mm";
+    options?: {
+      openDrawer?: boolean;
+      fullCut?: boolean;
+    };
+  }>
+): number[] {
+  return jobs.flatMap((job, index) => {
+    if (job.escPosCommands) return job.escPosCommands;
+    if (!job.htmlContent) return [];
+    return htmlToEscPosCommands(job.htmlContent, job.printerSize, job.options, {
+      includeInit: index === 0,
+    });
+  });
+}
+
+function bytesToBase64(bytes: number[]): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const slice = bytes.slice(i, i + chunkSize);
+    binary += String.fromCharCode(...slice.map((value) => value & 0xff));
+  }
+  return btoa(binary);
+}
+
+function printUrlSupportsAndroidEscPosApp(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /android/i.test(ua);
+}
+
+async function printMultipleViaEscPosAndroidApp(
+  jobs: Array<{
+    htmlContent?: string;
+    escPosCommands?: number[];
+    printerSize: "80mm" | "58mm";
+    options?: {
+      openDrawer?: boolean;
+      fullCut?: boolean;
+    };
+  }>
+): Promise<void> {
+  if (typeof window === "undefined") {
+    throw new Error("Entorno sin window para fallback Android");
+  }
+
+  if (!printUrlSupportsAndroidEscPosApp()) {
+    throw new Error("Fallback print://escpos no disponible fuera de Android");
+  }
+
+  const bytes = buildEscPosBytesFromJobs(jobs);
+  if (bytes.length === 0) {
+    throw new Error("No hay contenido para imprimir en fallback Android");
+  }
+
+  const textPayload = jobs
+    .map((job) => (job.htmlContent ? htmlToPlainText(job.htmlContent) : ""))
+    .filter((line) => line.trim().length > 0)
+    .join("\n\n");
+
+  const feedLines = 3;
+  const openDrawer = jobs.some((job) => job.options?.openDrawer);
+  const fullCut = jobs.some((job) => job.options?.fullCut);
+  const printerSize = jobs[0]?.printerSize || "80mm";
+  const params = new URLSearchParams();
+  params.set("raw", bytesToBase64(bytes));
+  params.set("encoding", "base64");
+  params.set("text", textPayload);
+  params.set("feed", String(feedLines));
+  params.set("cut", fullCut ? "full" : "partial");
+  params.set("drawer", openDrawer ? "1" : "0");
+  params.set("size", printerSize);
+
+  // Formato solicitado por ESC POS Print Service: print://escpos.org/escpos/bt/
+  const schemeUrl = `print://escpos.org/escpos/bt/print?${params.toString()}`;
+  window.location.href = schemeUrl;
 }
 
 /**

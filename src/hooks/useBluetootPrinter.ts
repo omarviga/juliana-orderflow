@@ -10,7 +10,6 @@ import {
   generateKitchenOrderEscPos,
   printMultipleToDevice,
   printToDevice,
-  printViaBrowser,
 } from "@/lib/printer-formats";
 import type { PrinterDevice, PrinterPreferences } from "@/types/printer";
 import type { CartItem } from "@/types/pos";
@@ -18,7 +17,7 @@ import type { CashRegisterSale } from "@/lib/cash-register";
 
 const STORAGE_KEY = "printerPreferences";
 const AVAILABLE_PRINTERS_KEY = "availablePrinters";
-const REQUIRE_SERVER_PRINT = false;
+const FORCE_ESC_POS_ONLY = true;
 const FIXED_CLIENT_PRINTER_ID = "GLPrinter_80mm";
 const FIXED_KITCHEN_PRINTER_ID = "GLPrinter_80mm";
 const FIXED_CLIENT_PRINTER: PrinterDevice = {
@@ -40,18 +39,18 @@ const DEFAULT_PREFERENCES: PrinterPreferences = {
   clientPrinterId: FIXED_CLIENT_PRINTER_ID,
   kitchenPrinterId: FIXED_KITCHEN_PRINTER_ID,
   autoPrint: true,
-  useBluetoothIfAvailable: false,
-  fallbackToWeb: REQUIRE_SERVER_PRINT ? false : true,
+  useBluetoothIfAvailable: true,
+  fallbackToWeb: false,
   openDrawerOn80mm: true,
   fullCutOn80mm: true,
 };
 
 function enforceServerOnlyPreferences(prefs: PrinterPreferences): PrinterPreferences {
-  if (!REQUIRE_SERVER_PRINT) return prefs;
+  if (!FORCE_ESC_POS_ONLY) return prefs;
   return {
     ...prefs,
     autoPrint: true,
-    useBluetoothIfAvailable: false,
+    useBluetoothIfAvailable: true,
     fallbackToWeb: false,
   };
 }
@@ -461,28 +460,16 @@ export function useBluetootPrinter() {
         fullCut?: boolean;
       }
     ) => {
-      if (preferences.useBluetoothIfAvailable) {
-        if (!preferredPrinter?.address) {
-          if (!preferences.fallbackToWeb) {
-            throw new Error("No hay impresora Bluetooth emparejada para esta impresión.");
-          }
-        } else {
-          try {
-            await printToDevice(preferredPrinter.address, htmlContent, printerSize, options);
-            toast.success(`${title} enviado a impresora Bluetooth`);
-            return;
-          } catch (error) {
-            console.error(`Error al imprimir ${title} por Bluetooth:`, error);
-            if (!preferences.fallbackToWeb) {
-              throw error;
-            }
-            toast.warning(`Bluetooth falló. Usando impresión por navegador para ${title}.`);
-          }
-        }
+      if (!preferences.useBluetoothIfAvailable) {
+        throw new Error("La impresión por ESC/POS Bluetooth es obligatoria en esta instalación.");
       }
 
-      printViaBrowser(htmlContent, title);
-      toast.success(`${title} listo para imprimir`);
+      if (!preferredPrinter?.address) {
+        throw new Error("No hay impresora Bluetooth emparejada para esta impresión.");
+      }
+
+      await printToDevice(preferredPrinter.address, htmlContent, printerSize, options);
+      toast.success(`${title} enviado a impresora Bluetooth`);
     },
     [preferences]
   );
@@ -724,16 +711,7 @@ export function useBluetootPrinter() {
           }
         }
         
-        // Fallback final: navegador si Bluetooth no se usa o falla.
-        const kitchenHtml = generateKitchenOrderHTML(items, orderNumber, customerName, dateStr);
-        const clientHtml = generateClientTicketHTML(
-          items, total, orderNumber, customerName, dateStr, paymentMethodLabel
-        );
-
-        // Final fallback: Browser printing
-        const combinedHtml = `${kitchenHtml}<div style="page-break-after: always;"></div>${clientHtml}`;
-        printViaBrowser(combinedHtml, "Comanda + Ticket");
-        toast.success("Comanda y ticket listos para imprimir");
+        throw new Error("No se pudo imprimir por ESC/POS Bluetooth en ninguna impresora configurada.");
       };
 
       await enqueuePrintJob(printJob);
