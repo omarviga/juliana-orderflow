@@ -1,5 +1,9 @@
 // printer-hook.ts (adaptado)
-
+import {
+  printClientTicketEscPos,
+  printKitchenOrderEscPos,
+  printBothEscPos,
+} from "@/lib/printer-format";
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import {
@@ -19,6 +23,17 @@ import {
 import type { PrinterDevice, PrinterPreferences } from "@/types/printer";
 import type { CartItem } from "@/types/pos";
 import type { CashRegisterSale } from "@/lib/cash-register";
+
+const success = await printClientTicketEscPos(
+  "00:11:22:33:44:55", // MAC de la impresora
+  items,
+  total,
+  orderNumber,
+  customerName,
+  dateStr,
+  "Efectivo",
+  { openDrawer: true, fullCut: true, drawerNumber: 2 }
+);
 
 const STORAGE_KEY = "printerPreferences";
 const AVAILABLE_PRINTERS_KEY = "availablePrinters";
