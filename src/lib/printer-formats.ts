@@ -823,22 +823,10 @@ async function printMultipleViaEscPosAndroidApp(
     </html>
   `.trim();
   const dataUri = `data:text/html,${encodeURIComponent(thermalHtml)}`;
-  const openDrawer = jobs.some((job) => job.options?.openDrawer);
-  const fullCut = jobs.some((job) => job.options?.fullCut);
-  const printerSize = jobs[0]?.printerSize || "80mm";
-
-  const params = new URLSearchParams();
-  params.set("srcTp", "uri");
-  params.set("srcObj", "html");
-  params.set("numCopies", "1");
-  params.set("src", dataUri);
-  params.set("feed", "3");
-  params.set("cut", fullCut ? "full" : "partial");
-  params.set("drawer", openDrawer ? "1" : "0");
-  params.set("size", printerSize);
-
-  // Formato App Links LoopedLabs: print://escpos.org/escpos/bt/print?srcTp=uri&srcObj=html&src='data:text/html,...'
-  const schemeUrl = `print://escpos.org/escpos/bt/print?${params.toString()}`;
+  // Usar el formato minimo oficial de LoopedLabs para evitar errores de parseo.
+  // Nota: src debe ir entre comillas simples segun su documentacion.
+  const schemeUrl =
+    `print://escpos.org/escpos/bt/print?srcTp=uri&srcObj=html&numCopies=1&src='${dataUri}'`;
   window.location.href = schemeUrl;
 }
 
