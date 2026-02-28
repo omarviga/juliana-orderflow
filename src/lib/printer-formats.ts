@@ -803,23 +803,23 @@ async function printMultipleViaEscPosAndroidApp(
     throw new Error("Fallback print://escpos no disponible fuera de Android");
   }
 
-  const htmlPages = jobs
-    .map((job) => (job.htmlContent ? job.htmlContent : ""))
+  const plainTextPages = jobs
+    .map((job) => (job.htmlContent ? htmlToPlainText(job.htmlContent) : ""))
     .filter((page) => page.trim().length > 0);
 
-  if (htmlPages.length === 0) {
-    throw new Error("No hay HTML imprimible para ESC/POS Print Service.");
+  if (plainTextPages.length === 0) {
+    throw new Error("No hay contenido imprimible para ESC/POS Print Service.");
   }
 
-  const combinedHtml = htmlPages.join('<div style="page-break-after: always;"></div>');
-  const dataUri = `data:text/html,${encodeURIComponent(combinedHtml)}`;
+  const combinedText = plainTextPages.join("\n\n------------------------------\n\n");
+  const dataUri = `data:text/plain;charset=utf-8,${encodeURIComponent(combinedText)}`;
   const openDrawer = jobs.some((job) => job.options?.openDrawer);
   const fullCut = jobs.some((job) => job.options?.fullCut);
   const printerSize = jobs[0]?.printerSize || "80mm";
 
   const params = new URLSearchParams();
   params.set("srcTp", "uri");
-  params.set("srcObj", "html");
+  params.set("srcObj", "txt");
   params.set("numCopies", "1");
   params.set("src", dataUri);
   params.set("feed", "3");
@@ -827,7 +827,7 @@ async function printMultipleViaEscPosAndroidApp(
   params.set("drawer", openDrawer ? "1" : "0");
   params.set("size", printerSize);
 
-  // Formato App Links LoopedLabs: print://escpos.org/escpos/bt/print?srcTp=uri&srcObj=html&src=...
+  // Formato App Links LoopedLabs: print://escpos.org/escpos/bt/print?srcTp=uri&srcObj=txt&src=...
   const schemeUrl = `print://escpos.org/escpos/bt/print?${params.toString()}`;
   window.location.href = schemeUrl;
 }

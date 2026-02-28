@@ -669,10 +669,19 @@ export function useBluetootPrinter() {
             dateStr,
             paymentMethodLabel
           );
-          const combinedHtml = `${kitchenHtml}<div style="page-break-after: always;"></div>${clientHtml}`;
           await printWithPreferences(
-            combinedHtml,
-            "Comanda + Ticket",
+            kitchenHtml,
+            "Comanda Cocina",
+            "58mm",
+            kitchenPrinter,
+            {
+              openDrawer: false,
+              fullCut: true,
+            }
+          );
+          await printWithPreferences(
+            clientHtml,
+            "Ticket Cliente",
             "80mm",
             clientPrinter,
             {
