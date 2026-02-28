@@ -1,4 +1,4 @@
-// printer-format.ts - VERSIÓN CORREGIDA CON LOGO
+// printer-format.ts - VERSIÓN CORREGIDA CON COMANDA DETALLADA Y TICKET EXACTO
 
 import type { CartItem } from "@/types/pos";
 
@@ -66,7 +66,70 @@ function encode(text: string): number[] {
 }
 
 // ============================================
-// GENERADOR DE TICKET EXACTAMENTE COMO LA IMAGEN
+// GENERADOR DE COMANDA (PARTE 1) - CON FORMATO CORRECTO
+// ============================================
+
+export function generateKitchenOrderEscPos(
+  items: CartItem[],
+  orderNumber: number | null,
+  customerName: string,
+  dateStr: string
+): number[] {
+  const config = PRINTER_CONFIGS["58mm"];
+  const separator = "-".repeat(config.charsPerLine) + "\n";
+
+  const commands = [
+    ...CMD.RESET,
+    ...CMD.LEFT,
+    ...CMD.BOLD_ON,
+    ...encode(`CLIENTE: ${(customerName || "Barra").toUpperCase()}`),
+    ...CMD.BOLD_OFF,
+    ...encode(`Hora: ${dateStr}`),
+    ...encode(separator),
+  ];
+
+  items.forEach((item) => {
+    // Formato: "1X ARMA TU ENSALADA"
+    commands.push(
+      ...CMD.BOLD_ON,
+      ...encode(`${item.quantity}X ${getDisplayProductName(item.product.name).toUpperCase()}`),
+      ...CMD.BOLD_OFF
+    );
+
+    // Si tiene tamaño, mostrarlo en paréntesis en la siguiente línea
+    if (item.productSize?.name) {
+      commands.push(...encode(`(${item.productSize.name.toUpperCase()})`));
+    }
+
+    // Mostrar ingredientes (customizations) con guiones
+    if (item.customizations && item.customizations.length > 0) {
+      item.customizations.forEach((c) => {
+        commands.push(...encode(`- ${c.ingredient.name.toLowerCase()}`));
+      });
+    }
+
+    // Mostrar customLabel si existe con asterisco (como en el ejemplo)
+    if (item.customLabel) {
+      commands.push(...encode(`*${item.customLabel}`));
+    }
+
+    commands.push(LF);
+  });
+
+  commands.push(...encode(separator));
+  commands.push(...CMD.CENTER, ...CMD.BOLD_ON);
+  commands.push(...encode("PREPARAR YA"));
+  commands.push(...CMD.BOLD_OFF);
+  commands.push(LF, LF, ...CMD.FEED(3));
+
+  // Corte PARCIAL después de la comanda
+  commands.push(...CMD.PARTIAL_CUT);
+
+  return commands;
+}
+
+// ============================================
+// GENERADOR DE TICKET CLIENTE (PARTE 2) - CON FORMATO EXACTO
 // ============================================
 
 export function generateClientTicketEscPos(
@@ -87,11 +150,13 @@ export function generateClientTicketEscPos(
     ...CMD.CENTER,
     ...CMD.FONT_LARGE,
     ...CMD.BOLD_ON,
+    ...encode("Tufiana"),
     ...CMD.BOLD_OFF,
     ...CMD.FONT_NORMAL,
+    ...encode("BARRA COTIDIANA"),
     ...encode("AV. MIGUEL HIDALGO #276, COL CENTRO, ACAMBARO GTO."),
     ...encode("Tel. 417 206 9111"),
-    ...encode(doubleSeparator), // Línea doble como en la imagen
+    ...encode(doubleSeparator),
     ...CMD.LEFT,
     ...CMD.BOLD_ON,
     ...encode("DETALLE DEL PEDIDO"),
@@ -109,37 +174,37 @@ export function generateClientTicketEscPos(
   ];
 
   items.forEach((item) => {
-    const itemName = getDisplayProductName(item.product.name);
-    const size = item.productSize ? ` (${item.productSize.name})` : "";
-    const itemLine = `${item.quantity}x ${itemName}${size}`;
-    const priceLine = `$${item.subtotal.toFixed(0)}`;
-    const spaces = Math.max(1, config.charsPerLine - itemLine.length - priceLine.length);
+    // Formato: "- 1x Campesina"
+    const itemLine = `- ${item.quantity}x ${getDisplayProductName(item.product.name)}`;
+    commands.push(...CMD.BOLD_ON, ...encode(itemLine), ...CMD.BOLD_OFF);
 
-    commands.push(...CMD.BOLD_ON);
-    commands.push(...encode(itemLine + " ".repeat(spaces) + priceLine));
-    commands.push(...CMD.BOLD_OFF);
-
-    // Si tiene customLabel o kitchenNote, mostrarlos como "Sin extras" o类似
-    if (item.customLabel) {
-      commands.push(...encode(`  ${item.customLabel}`));
-    } else if (item.kitchenNote) {
-      commands.push(...encode(`  ${item.kitchenNote}`));
-    } else {
-      commands.push(...encode(`  Sin extras`)); // Como en la imagen
+    // Si tiene tamaño, mostrarlo
+    if (item.productSize?.name) {
+      commands.push(...encode(`  (${item.productSize.name})`));
     }
+
+    // Detalles/Sin extras
+    if (item.customLabel) {
+      commands.push(...encode(`  - ${item.customLabel}`));
+    } else if (item.kitchenNote) {
+      commands.push(...encode(`  - ${item.kitchenNote}`));
+    } else {
+      commands.push(...encode(`  - Sin extras`));
+    }
+
+    // Precio
+    const priceLine = `  - $${item.subtotal.toFixed(0)}`;
+    commands.push(...encode(priceLine));
   });
 
-  commands.push(...encode(doubleSeparator)); // Línea doble antes del total
-
-  // Total en negrita y grande
+  commands.push(...encode(doubleSeparator));
   commands.push(...CMD.CENTER, ...CMD.FONT_LARGE, ...CMD.BOLD_ON);
   commands.push(...encode("TOTAL"));
   commands.push(...encode(`$${total.toFixed(0)}`));
   commands.push(...CMD.BOLD_OFF, ...CMD.FONT_NORMAL);
-
   commands.push(...encode(doubleSeparator));
   commands.push(...CMD.CENTER);
-  commands.push(...encode("GRACIAS POR VISITARNOS")); // Como en la imagen
+  commands.push(...encode("GRACIAS POR VISITARNOS"));
   commands.push(LF, LF);
 
   if (options?.openDrawer) {
@@ -147,62 +212,54 @@ export function generateClientTicketEscPos(
   }
 
   commands.push(...CMD.FEED(3));
-  commands.push(...(options?.fullCut ? CMD.FULL_CUT : CMD.PARTIAL_CUT));
+
+  // Corte COMPLETO al final del ticket
+  commands.push(...CMD.FULL_CUT);
 
   return commands;
 }
 
-export function generateKitchenOrderEscPos(
+// ============================================
+// FUNCIÓN PARA IMPRIMIR AMBOS (COMANDA + TICKET)
+// ============================================
+
+export function generateBothEscPos(
   items: CartItem[],
+  total: number,
   orderNumber: number | null,
   customerName: string,
   dateStr: string,
-  options?: { fullCut?: boolean }
+  paymentMethodLabel: string = "Efectivo",
+  options?: {
+    openDrawer?: boolean;
+    drawerNumber?: 1 | 2;
+  }
 ): number[] {
-  const config = PRINTER_CONFIGS["58mm"];
-  const separator = "=".repeat(config.charsPerLine) + "\n";
+  // Primero generar la comanda (con corte parcial al final)
+  const kitchenCommands = generateKitchenOrderEscPos(
+    items,
+    orderNumber,
+    customerName,
+    dateStr
+  );
 
-  const commands = [
-    ...CMD.RESET,
-    ...CMD.CENTER,
-    ...CMD.FONT_LARGE,
-    ...CMD.BOLD_ON,
-    ...encode(`COMANDA #${orderNumber || "---"}`),
-    ...CMD.FONT_NORMAL,
-    ...encode(separator),
-    ...CMD.LEFT,
-    ...CMD.BOLD_ON,
-    ...encode(`CLIENTE: ${(customerName || "Barra").toUpperCase()}`),
-    ...CMD.BOLD_OFF,
-    ...encode(`HORA: ${dateStr}`),
-    ...encode(separator),
-  ];
-
-  items.forEach((item) => {
-    commands.push(
-      ...CMD.BOLD_ON,
-      ...encode(`${item.quantity}x ${getDisplayProductName(item.product.name)}${item.productSize ? ` (${item.productSize.name})` : ""}`),
-      ...CMD.BOLD_OFF
-    );
-
-    const details = [
-      ...(item.customizations || []).map((c) => c.ingredient.name),
-      ...(item.customLabel ? [`📝 ${item.customLabel}`] : []),
-      ...(item.kitchenNote ? [`💬 ${item.kitchenNote}`] : []),
-    ];
-
-    if (details.length) {
-      details.forEach((detail) => commands.push(...encode(`  • ${detail}`)));
-    } else {
-      commands.push(...encode("  (Sin modificaciones)"));
+  // Luego generar el ticket del cliente (con corte completo al final)
+  const clientCommands = generateClientTicketEscPos(
+    items,
+    total,
+    orderNumber,
+    customerName,
+    dateStr,
+    paymentMethodLabel,
+    {
+      openDrawer: options?.openDrawer,
+      fullCut: true,
+      drawerNumber: options?.drawerNumber
     }
-    commands.push(LF);
-  });
+  );
 
-  commands.push(LF, LF, ...CMD.FEED(2));
-  commands.push(...(options?.fullCut ? CMD.FULL_CUT : CMD.PARTIAL_CUT));
-
-  return commands;
+  // Combinar comandos: comanda + ticket
+  return [...kitchenCommands, ...clientCommands];
 }
 
 // ============================================
@@ -247,38 +304,101 @@ export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): st
     : "http://localhost:8080";
   const logoUrl = `${baseUrl}/juliana-logo.png`;
 
-  const hasKitchenSection = text.includes("COMANDA #");
+  // Detectar si es comanda (tiene "CLIENTE:" al inicio)
+  const isKitchen = text.includes("CLIENTE:") && !text.includes("Tufiana");
+
+  // Escapar texto para HTML
   const escapedText = text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br>");
 
-  // Si hay comanda + ticket en el mismo trabajo, imprimir texto completo sin filtrar líneas.
-  const html = hasKitchenSection
-    ? `<!DOCTYPE html>
+  let html = "";
+
+  if (isKitchen) {
+    // HTML para COMANDA
+    html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: white; font-family: 'Courier New', monospace; padding: 10px; }
-    .ticket { width: 80mm; border: 1px solid #000; border-radius: 8px; padding: 10px; }
-    .logo-container { text-align: center; margin-bottom: 8px; }
-    .logo { max-width: 150px; height: auto; display: inline-block; }
-    .title { text-align: center; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
-    pre { white-space: pre-wrap; font-size: 12px; line-height: 1.25; }
+    body { 
+      background: white; 
+      font-family: 'Courier New', monospace;
+      padding: 15px;
+    }
+    .ticket {
+      width: 58mm;
+      background: white;
+      border: 1px solid #000;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .header {
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+    .separator {
+      border-top: 1px dashed #000;
+      margin: 8px 0;
+    }
+    .item {
+      margin: 5px 0;
+    }
+    .item-name {
+      font-weight: bold;
+      font-size: 14px;
+    }
+    .ingredient {
+      margin-left: 10px;
+      font-size: 12px;
+    }
+    .footer {
+      text-align: center;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+    pre { display: none; }
   </style>
 </head>
 <body>
   <div class="ticket">
-    <div class="logo-container"><img class="logo" src="${logoUrl}" alt="Juliana" onerror="this.style.display='none'"></div>
-    <div class="title">COMANDA + TICKET</div>
-    <pre>${escapedText}</pre>
+    ${escapedText.split('<br>').map(line => {
+      if (line.includes('CLIENTE:')) {
+        return `<div class="header">${line}</div>`;
+      }
+      if (line.includes('Hora:')) {
+        return `<div>${line}</div>`;
+      }
+      if (line === '-'.repeat(32)) {
+        return `<div class="separator"></div>`;
+      }
+      if (line.includes('X ')) {
+        return `<div class="item-name">${line}</div>`;
+      }
+      if (line.startsWith('(')) {
+        return `<div>${line}</div>`;
+      }
+      if (line.startsWith('- ')) {
+        return `<div class="ingredient">${line}</div>`;
+      }
+      if (line.startsWith('*')) {
+        return `<div class="ingredient" style="font-style:italic">${line}</div>`;
+      }
+      if (line.includes('PREPARAR YA')) {
+        return `<div class="footer">${line}</div>`;
+      }
+      return `<div>${line}</div>`;
+    }).join('')}
   </div>
 </body>
-</html>`
-    : `<!DOCTYPE html>
+</html>`;
+  } else {
+    // HTML para TICKET CLIENTE (igual que antes)
+    html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
@@ -418,48 +538,49 @@ export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): st
     <div class="single-line"></div>
 
     ${text.split('\n').map(line => {
-    if (line.includes('Pedido:')) {
-      const [_, value] = line.split(':');
-      return `<div class="info-row"><span class="info-label">Pedido</span><strong class="info-value">${value}</strong></div>`;
-    }
-    if (line.includes('Cliente:')) {
-      const [_, value] = line.split(':');
-      return `<div class="info-row"><span class="info-label">Cliente</span><strong class="info-value">${value}</strong></div>`;
-    }
-    if (line.includes('Fecha:')) {
-      const [_, value] = line.split(':');
-      return `<div class="info-row"><span class="info-label">Fecha</span><span class="info-value">${value}</span></div>`;
-    }
-    if (line.includes('Pago:')) {
-      const [_, value] = line.split(':');
-      return `<div class="info-row"><span class="info-label">Pago</span><strong class="info-value">${value}</strong></div>`;
-    }
-    if (line.includes('CONSUMO')) {
-      return `<div class="double-line"></div><div class="section-title">CONSUMO</div><div class="single-line"></div>`;
-    }
-    if (line.includes('x ') && line.includes('$')) {
-      const match = line.match(/(.*?)(\$\d+)/);
-      if (match) {
-        return `<div class="item-row"><span>${match[1].trim()}</span><span>${match[2]}</span></div>`;
+      if (line.includes('Pedido:')) {
+        const [_, value] = line.split(':');
+        return `<div class="info-row"><span class="info-label">Pedido</span><strong class="info-value">${value}</strong></div>`;
       }
-    }
-    if (line.includes('Sin extras')) {
-      return `<div class="item-detail">${line.trim()}</div>`;
-    }
-    if (line.includes('TOTAL')) {
-      return `<div class="double-line"></div>`;
-    }
-    if (line.includes('$') && !line.includes('x')) {
-      return `<div class="total-row"><span class="total-label">TOTAL</span><span class="total-amount">${line.trim()}</span></div>`;
-    }
-    if (line.includes('GRACIAS')) {
-      return `<div class="double-line"></div><div class="footer">${line.trim()}</div>`;
-    }
-    return '';
-  }).filter(Boolean).join('\n')}
+      if (line.includes('Cliente:')) {
+        const [_, value] = line.split(':');
+        return `<div class="info-row"><span class="info-label">Cliente</span><strong class="info-value">${value}</strong></div>`;
+      }
+      if (line.includes('Fecha:')) {
+        const [_, value] = line.split(':');
+        return `<div class="info-row"><span class="info-label">Fecha</span><span class="info-value">${value}</span></div>`;
+      }
+      if (line.includes('Pago:')) {
+        const [_, value] = line.split(':');
+        return `<div class="info-row"><span class="info-label">Pago</span><strong class="info-value">${value}</strong></div>`;
+      }
+      if (line.includes('CONSUMO')) {
+        return `<div class="double-line"></div><div class="section-title">CONSUMO</div><div class="single-line"></div>`;
+      }
+      if (line.includes('- ') && line.includes('x ')) {
+        return `<div class="item-row"><span>${line}</span></div>`;
+      }
+      if (line.includes('  - ') && !line.includes('$')) {
+        return `<div class="item-detail">${line.trim()}</div>`;
+      }
+      if (line.includes('  - $')) {
+        return `<div class="item-detail" style="font-weight:bold">${line.trim()}</div>`;
+      }
+      if (line.includes('TOTAL')) {
+        return `<div class="double-line"></div>`;
+      }
+      if (line.includes('$') && !line.includes('-')) {
+        return `<div class="total-row"><span class="total-label">TOTAL</span><span class="total-amount">${line.trim()}</span></div>`;
+      }
+      if (line.includes('GRACIAS')) {
+        return `<div class="double-line"></div><div class="footer">${line.trim()}</div>`;
+      }
+      return '';
+    }).filter(Boolean).join('\n')}
   </div>
 </body>
 </html>`;
+  }
 
   const src = `data:text/html,${encodeURIComponent(html)}`;
 
@@ -471,7 +592,7 @@ export function buildEscPosAppUrl(macAddress: string, payload: PrintPayload): st
   params.set("feed", String(feedLines));
   params.set("cut", autoCut);
   params.set("drawer", cashDrawer ? "1" : "0");
-  params.set("size", "80mm");
+  params.set("size", isKitchen ? "58mm" : "80mm");
 
   return `print://escpos.org/escpos/bt/print?${params.toString()}`;
 }
@@ -554,13 +675,12 @@ export async function printKitchenOrderEscPos(
   items: CartItem[],
   orderNumber: number | null,
   customerName: string,
-  dateStr: string,
-  options?: { fullCut?: boolean }
+  dateStr: string
 ): Promise<boolean> {
-  const commands = generateKitchenOrderEscPos(items, orderNumber, customerName, dateStr, options);
+  const commands = generateKitchenOrderEscPos(items, orderNumber, customerName, dateStr);
   return printToEscPosApp(macAddress, commands, {
     feedLines: 2,
-    autoCut: options?.fullCut ? 'full' : 'partial',
+    autoCut: 'partial',
     openDrawer: false
   });
 }
@@ -575,20 +695,17 @@ export async function printBothEscPos(
   paymentMethodLabel: string = "Efectivo",
   options?: {
     openDrawer?: boolean;
-    fullCut?: boolean;
     drawerNumber?: 1 | 2;
   }
 ): Promise<boolean> {
-  const kitchenCommands = generateKitchenOrderEscPos(items, orderNumber, customerName, dateStr, { fullCut: false });
-  const clientCommands = generateClientTicketEscPos(
+  const commands = generateBothEscPos(
     items, total, orderNumber, customerName, dateStr, paymentMethodLabel,
-    { openDrawer: options?.openDrawer, fullCut: options?.fullCut, drawerNumber: options?.drawerNumber }
+    { openDrawer: options?.openDrawer, drawerNumber: options?.drawerNumber }
   );
 
-  const combinedCommands = [...kitchenCommands, ...clientCommands];
-  return printToEscPosApp(macAddress, combinedCommands, {
+  return printToEscPosApp(macAddress, commands, {
     feedLines: 2,
-    autoCut: options?.fullCut ? 'full' : 'partial',
+    autoCut: 'full',
     openDrawer: options?.openDrawer,
     drawerNumber: options?.drawerNumber || 2
   });
