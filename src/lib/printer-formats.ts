@@ -666,13 +666,9 @@ async function resolveBluetoothDevice(deviceAddress: string): Promise<BluetoothD
 async function resolveWritableCharacteristic(
   deviceAddress: string
 ): Promise<BluetoothRemoteGATTCharacteristic> {
-  if (
-    activeBluetoothSession &&
-    activeBluetoothSession.deviceAddress === deviceAddress &&
-    activeBluetoothSession.device.gatt?.connected
-  ) {
-    return activeBluetoothSession.characteristic;
-  }
+  // Forzar resolución fresca por trabajo para evitar sesiones BLE "zombie"
+  // que se quedan conectadas pero dejan de aceptar datos tras el primer ticket.
+  clearActiveBluetoothSession();
 
   const device = await resolveBluetoothDevice(deviceAddress);
   const server = device.gatt?.connected ? device.gatt : await device.gatt?.connect();
@@ -808,6 +804,7 @@ export async function printMultipleToDevice(
       }
 
       console.log("Datos enviados exitosamente");
+      clearActiveBluetoothSession();
       return;
     } catch (error) {
       clearActiveBluetoothSession();

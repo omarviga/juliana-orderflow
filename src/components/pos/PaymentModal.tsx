@@ -14,7 +14,6 @@ import { Printer, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
 import {
-  getPaymentMethodLabel,
   registerPaidSale,
   type PaymentMethod,
 } from "@/lib/cash-register";
@@ -62,11 +61,42 @@ export function PaymentModal({
   const [savedOrderNumber, setSavedOrderNumber] = useState<number | null>(null);
   const [customerName, setCustomerName] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
+  const [cashReceivedInput, setCashReceivedInput] = useState("");
   const [isAutoPrinting, setIsAutoPrinting] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [allowManualNameInput, setAllowManualNameInput] = useState(false);
   const printer = useBluetootPrinter();
   const quickNames = ["Barra", "Para llevar"];
+  const roundUp = (value: number, step: number) => Math.ceil(value / step) * step;
+
+  const parseCashAmount = (value: string): number => {
+    const normalized = value.replace(/[^0-9.]/g, "");
+    if (!normalized) return 0;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const cashReceived = parseCashAmount(cashReceivedInput);
+  const change = paymentMethod === "efectivo" ? Math.max(0, cashReceived - total) : 0;
+  const isCashInsufficient = paymentMethod === "efectivo" && cashReceived > 0 && cashReceived < total;
+  const isCashMissing = paymentMethod === "efectivo" && cashReceived <= 0;
+
+  const suggestedCashAmounts = Array.from(
+    new Set([total, roundUp(total, 20), roundUp(total, 50), roundUp(total, 100), 200, 500, 1000])
+  )
+    .filter((amount) => amount >= total)
+    .sort((a, b) => a - b)
+    .slice(0, 5);
+
+  const paymentMethodLabelForTicket = () => {
+    if (paymentMethod !== "efectivo") {
+      return getPaymentMethodLabel(paymentMethod);
+    }
+    if (cashReceived <= 0) {
+      return "Efectivo";
+    }
+    return `Efectivo (${formatCurrencyMXN(cashReceived, 0)} / Cambio ${formatCurrencyMXN(change, 0)})`;
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -143,7 +173,7 @@ export function PaymentModal({
       orderNumber,
       orderCustomerName,
       dateStr,
-      getPaymentMethodLabel(paymentMethod)
+      paymentMethodLabelForTicket()
     );
   };
 
@@ -170,6 +200,16 @@ export function PaymentModal({
     }
 
     const normalizedCustomerName = customerName.trim() || "Barra";
+    if (paymentMethod === "efectivo") {
+      if (isCashMissing) {
+        toast.error("Captura cuánto pagó el cliente en efectivo.");
+        return;
+      }
+      if (cashReceived < total) {
+        toast.error("El monto recibido es menor al total.");
+        return;
+      }
+    }
     blurActiveElement();
 
     setSaving(true);
@@ -279,6 +319,7 @@ export function PaymentModal({
     setSavedOrderNumber(null);
     setCustomerName("");
     setPaymentMethod("efectivo");
+    setCashReceivedInput("");
     // En touch debe permanecer habilitado al reabrir el modal.
     setAllowManualNameInput(isTouchDevice);
     blurActiveElement();
@@ -369,6 +410,43 @@ export function PaymentModal({
                 </Button>
               </div>
             </div>
+
+            {paymentMethod === "efectivo" && (
+              <div className="space-y-2 rounded-md border p-3">
+                <label htmlFor="cash-received" className="text-sm font-medium text-foreground">
+                  Paga con
+                </label>
+                <Input
+                  id="cash-received"
+                  inputMode="decimal"
+                  placeholder="Monto recibido"
+                  value={cashReceivedInput}
+                  onChange={(event) => setCashReceivedInput(event.target.value)}
+                />
+                <div className="flex flex-wrap gap-2">
+                  {suggestedCashAmounts.map((amount) => (
+                    <Button
+                      key={amount}
+                      type="button"
+                      size="sm"
+                      variant={cashReceived === amount ? "default" : "outline"}
+                      onClick={() => setCashReceivedInput(String(amount))}
+                    >
+                      {formatCurrencyMXN(amount, 0)}
+                    </Button>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Cambio</span>
+                  <span className="font-semibold text-primary">{formatCurrencyMXN(change, 0)}</span>
+                </div>
+                {isCashInsufficient && (
+                  <p className="text-xs text-destructive">
+                    El monto no alcanza para cubrir el total.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -389,7 +467,11 @@ export function PaymentModal({
         </div>
 
         {!savedOrderNumber ? (
-          <Button onClick={handlePay} disabled={saving} className="w-full">
+          <Button
+            onClick={handlePay}
+            disabled={saving || (paymentMethod === "efectivo" && (isCashMissing || cashReceived < total))}
+            className="w-full"
+          >
             {saving ? "Guardando..." : "Confirmar Pago"}
           </Button>
         ) : (
