@@ -67,7 +67,6 @@ export function PaymentModal({
   const [allowManualNameInput, setAllowManualNameInput] = useState(false);
   const printer = useBluetootPrinter();
   const quickNames = ["Barra", "Para llevar"];
-  const roundUp = (value: number, step: number) => Math.ceil(value / step) * step;
 
   const parseCashAmount = (value: string): number => {
     const normalized = value.replace(/[^0-9.]/g, "");
@@ -80,13 +79,6 @@ export function PaymentModal({
   const change = paymentMethod === "efectivo" ? Math.max(0, cashReceived - total) : 0;
   const isCashInsufficient = paymentMethod === "efectivo" && cashReceived > 0 && cashReceived < total;
   const isCashMissing = paymentMethod === "efectivo" && cashReceived <= 0;
-
-  const suggestedCashAmounts = Array.from(
-    new Set([total, roundUp(total, 20), roundUp(total, 50), roundUp(total, 100), 200, 500, 1000])
-  )
-    .filter((amount) => amount >= total)
-    .sort((a, b) => a - b)
-    .slice(0, 5);
 
   const paymentMethodLabelForTicket = () => {
     if (paymentMethod !== "efectivo") {
@@ -328,7 +320,7 @@ export function PaymentModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-foreground">
             {savedOrderNumber ? `Pedido #${savedOrderNumber}` : "Resumen del Pedido"}
@@ -423,19 +415,6 @@ export function PaymentModal({
                   value={cashReceivedInput}
                   onChange={(event) => setCashReceivedInput(event.target.value)}
                 />
-                <div className="flex flex-wrap gap-2">
-                  {suggestedCashAmounts.map((amount) => (
-                    <Button
-                      key={amount}
-                      type="button"
-                      size="sm"
-                      variant={cashReceived === amount ? "default" : "outline"}
-                      onClick={() => setCashReceivedInput(String(amount))}
-                    >
-                      {formatCurrencyMXN(amount, 0)}
-                    </Button>
-                  ))}
-                </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Cambio</span>
                   <span className="font-semibold text-primary">{formatCurrencyMXN(change, 0)}</span>
@@ -450,7 +429,7 @@ export function PaymentModal({
           </div>
         )}
 
-        <div className="space-y-2 text-sm max-h-[50vh] overflow-y-auto">
+        <div className="space-y-2 text-sm max-h-[30vh] overflow-y-auto sm:max-h-[38vh]">
           {items.map((item) => (
             <div key={item.id} className="flex justify-between">
               <span className="text-foreground">

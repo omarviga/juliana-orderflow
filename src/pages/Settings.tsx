@@ -42,6 +42,7 @@ export default function SettingsPage() {
   const {
     preferences,
     savePreferences,
+    getClientPrinter,
   } = useBluetootPrinter();
 
   const [localSettings, setLocalSettings] = useState(settings);
@@ -55,6 +56,7 @@ export default function SettingsPage() {
   const [newProductCategoryId, setNewProductCategoryId] = useState<string>("");
   const [priceDraftByProductId, setPriceDraftByProductId] = useState<Record<string, string>>({});
   const [isSavingMenu, setIsSavingMenu] = useState(false);
+  const selectedClientPrinter = getClientPrinter();
 
   const uniqueProducts = useMemo(() => {
     const uniqueByCategoryAndName = new Map<string, (typeof products)[number]>();
@@ -845,15 +847,19 @@ export default function SettingsPage() {
                   Impresora Cliente (80mm)
                 </CardTitle>
                 <CardDescription>
-                  Configuración fija del sistema
+                  Configuración automática (sin selección manual)
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="rounded-lg bg-green-50 p-4 dark:bg-green-900/10">
-                  <p className="mb-2 text-sm font-medium text-green-900 dark:text-green-400">
-                    ✓ Fija
+                <div className="rounded-lg bg-muted/30 p-4">
+                  <p className="mb-2 text-sm font-medium text-foreground">
+                    ✓ Automática
                   </p>
-                  <p className="text-sm text-green-800 dark:text-green-300">GLPrinter (AB:0A:FA:8F:3C:AA)</p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedClientPrinter
+                      ? `${selectedClientPrinter.name}`
+                      : "El sistema detectará la impresora disponible automáticamente"}
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -865,15 +871,19 @@ export default function SettingsPage() {
                   Impresora Cocina
                 </CardTitle>
                 <CardDescription>
-                  Usa la misma impresora fija del sistema (80mm)
+                  Usa la misma impresora automática del sistema
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="rounded-lg bg-green-50 p-4 dark:bg-green-900/10">
-                  <p className="mb-2 text-sm font-medium text-green-900 dark:text-green-400">
-                    ✓ Fija
+                <div className="rounded-lg bg-muted/30 p-4">
+                  <p className="mb-2 text-sm font-medium text-foreground">
+                    {selectedClientPrinter ? "✓ Vinculada" : "Pendiente"}
                   </p>
-                  <p className="text-sm text-green-800 dark:text-green-300">GLPrinter (AB:0A:FA:8F:3C:AA)</p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedClientPrinter
+                      ? `${selectedClientPrinter.name} (${selectedClientPrinter.address})`
+                      : "Selecciona primero una impresora de cliente"}
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -890,7 +900,7 @@ export default function SettingsPage() {
                       Impresión Automática
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      Siempre activa para GLPrinter (modo automático)
+                      Siempre activa para la impresora seleccionada
                     </p>
                   </div>
                   <Switch

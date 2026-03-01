@@ -380,6 +380,11 @@ export default function OrdersPage() {
     setOpeningCashCounts(createInitialCounts());
     setCashOpeningOpen(false);
     toast.success(`Apertura registrada por ${formatCurrencyMXN(saved.amount)}`);
+    if (typeof window !== "undefined") {
+      setTimeout(() => {
+        window.location.assign("/");
+      }, 250);
+    }
   };
 
   const handleRegisterCashMovement = () => {
@@ -941,7 +946,7 @@ export default function OrdersPage() {
       </Dialog>
 
       <Dialog open={cashOpeningOpen} onOpenChange={setCashOpeningOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Apertura de Caja</DialogTitle>
             <DialogDescription>
@@ -974,7 +979,7 @@ export default function OrdersPage() {
                 placeholder="Fondo inicial"
               />
             </div>
-            <div className="max-h-56 overflow-y-auto rounded-lg border">
+            <div className="max-h-56 overflow-x-auto overflow-y-auto rounded-lg border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1005,7 +1010,7 @@ export default function OrdersPage() {
                               type="number"
                               min="0"
                               value={quantity}
-                              className="h-8 w-16 text-right"
+                              className="h-8 w-14 text-right"
                               inputMode="numeric"
                               enterKeyHint="done"
                               onChange={(event) => {

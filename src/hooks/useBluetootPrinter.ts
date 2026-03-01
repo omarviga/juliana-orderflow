@@ -13,32 +13,42 @@ import type { CartItem } from "@/types/pos";
 import type { CashRegisterSale } from "@/lib/cash-register";
 
 const STORAGE_KEY = "printerPreferences";
-const FIXED_PRINTER_ID = "AB:0A:FA:8F:3C:AA";
-const FIXED_PRINTER: PrinterDevice = {
-  id: FIXED_PRINTER_ID,
-  address: FIXED_PRINTER_ID,
-  name: "GLPrinter",
+const AUTO_PRINTER_ID = "AUTO_PRINTER";
+const AUTO_PRINTER: PrinterDevice = {
+  id: AUTO_PRINTER_ID,
+  address: AUTO_PRINTER_ID,
+  name: "Auto (detectar impresora)",
   type: "80mm",
   status: "connected",
 };
 
 const DEFAULT_PREFERENCES: PrinterPreferences = {
   printers: {
-    [FIXED_PRINTER_ID]: FIXED_PRINTER,
+    [AUTO_PRINTER_ID]: AUTO_PRINTER,
   },
-  clientPrinterId: FIXED_PRINTER_ID,
+  clientPrinterId: AUTO_PRINTER_ID,
   autoPrint: true,
   openDrawerOn80mm: true,
   fullCutOn80mm: true,
 };
 
 function normalizePreferences(input?: Partial<PrinterPreferences>): PrinterPreferences {
+  const printersInput = input?.printers && typeof input.printers === "object" ? input.printers : {};
+  const printers = {
+    [AUTO_PRINTER_ID]: AUTO_PRINTER,
+    ...printersInput,
+  };
+  const ids = Object.keys(printers);
+  const requestedId = input?.clientPrinterId;
+  const clientPrinterId = requestedId && printers[requestedId] ? requestedId : ids[0];
+
   return {
-    printers: {
-      [FIXED_PRINTER_ID]: FIXED_PRINTER,
-    },
-    clientPrinterId: FIXED_PRINTER_ID,
-    autoPrint: true,
+    printers,
+    clientPrinterId,
+    autoPrint:
+      typeof input?.autoPrint === "boolean"
+        ? input.autoPrint
+        : DEFAULT_PREFERENCES.autoPrint,
     openDrawerOn80mm:
       typeof input?.openDrawerOn80mm === "boolean"
         ? input.openDrawerOn80mm
@@ -117,7 +127,42 @@ export function useBluetootPrinter() {
     };
   }, [printQueue, isPrinting]);
 
-  const getClientPrinter = useCallback((): PrinterDevice => FIXED_PRINTER, []);
+  const getClientPrinter = useCallback((): PrinterDevice | null => {
+    if (!preferences.clientPrinterId) return null;
+    return preferences.printers[preferences.clientPrinterId] || AUTO_PRINTER;
+  }, [preferences.clientPrinterId, preferences.printers]);
+
+  const selectClientPrinter = useCallback(async (): Promise<PrinterDevice> => {
+    if (typeof navigator === "undefined" || !navigator.bluetooth?.requestDevice) {
+      throw new Error("Este navegador no soporta selección manual de impresora Bluetooth.");
+    }
+
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: ["000018f0-0000-1000-8000-00805f9b34fb"],
+    });
+
+    const printer: PrinterDevice = {
+      id: device.id,
+      address: device.id,
+      name: device.name || "Impresora Bluetooth",
+      type: "80mm",
+      status: "connected",
+      lastUsed: new Date(),
+    };
+
+    savePreferences({
+      ...preferences,
+      printers: {
+        ...preferences.printers,
+        [printer.id]: printer,
+      },
+      clientPrinterId: printer.id,
+      autoPrint: true,
+    });
+
+    return printer;
+  }, [preferences, savePreferences]);
 
   const printClientTicket = useCallback(
     async (
@@ -129,6 +174,8 @@ export function useBluetootPrinter() {
       paymentMethodLabel: string = "Efectivo"
     ) => {
       const printJob = async () => {
+        const selectedPrinter = getClientPrinter() || AUTO_PRINTER;
+
         const escPosCommands = generateClientTicketEscPos(
           items,
           total,
@@ -142,7 +189,7 @@ export function useBluetootPrinter() {
           }
         );
 
-        await printMultipleToDevice(FIXED_PRINTER.address, [
+        await printMultipleToDevice(selectedPrinter.address, [
           {
             escPosCommands,
             printerSize: "80mm",
@@ -157,7 +204,7 @@ export function useBluetootPrinter() {
 
       await enqueuePrintJob(printJob);
     },
-    [enqueuePrintJob, preferences.fullCutOn80mm, preferences.openDrawerOn80mm]
+    [enqueuePrintJob, getClientPrinter, preferences.fullCutOn80mm, preferences.openDrawerOn80mm]
   );
 
   const printCashCutTicket = useCallback(
@@ -169,6 +216,8 @@ export function useBluetootPrinter() {
       details?: CashCutDetails
     ) => {
       const printJob = async () => {
+        const selectedPrinter = getClientPrinter() || AUTO_PRINTER;
+
         const escPosCommands = generateCashCutTicketEscPos(
           sales,
           generatedAt,
@@ -181,7 +230,7 @@ export function useBluetootPrinter() {
           }
         );
 
-        await printMultipleToDevice(FIXED_PRINTER.address, [
+        await printMultipleToDevice(selectedPrinter.address, [
           {
             escPosCommands,
             printerSize: "80mm",
@@ -195,17 +244,19 @@ export function useBluetootPrinter() {
 
       await enqueuePrintJob(printJob);
     },
-    [enqueuePrintJob, preferences.fullCutOn80mm, preferences.openDrawerOn80mm]
+    [enqueuePrintJob, getClientPrinter, preferences.fullCutOn80mm, preferences.openDrawerOn80mm]
   );
 
   const printKitchenOrder = useCallback(
     async (items: CartItem[], orderNumber: number | null, customerName: string, dateStr: string) => {
       const printJob = async () => {
+        const selectedPrinter = getClientPrinter() || AUTO_PRINTER;
+
         const escPosCommands = generateKitchenOrderEscPos(items, orderNumber, customerName, dateStr, {
           fullCut: false,
         });
 
-        await printMultipleToDevice(FIXED_PRINTER.address, [
+        await printMultipleToDevice(selectedPrinter.address, [
           {
             escPosCommands,
             printerSize: "80mm",
@@ -216,7 +267,7 @@ export function useBluetootPrinter() {
 
       await enqueuePrintJob(printJob);
     },
-    [enqueuePrintJob]
+    [enqueuePrintJob, getClientPrinter]
   );
 
   const printKitchenAndClientCombined = useCallback(
@@ -229,6 +280,8 @@ export function useBluetootPrinter() {
       paymentMethodLabel: string = "Efectivo"
     ) => {
       const printJob = async () => {
+        const selectedPrinter = getClientPrinter() || AUTO_PRINTER;
+
         const kitchenEscPos = generateKitchenOrderEscPos(items, orderNumber, customerName, dateStr, {
           fullCut: false,
         });
@@ -245,7 +298,7 @@ export function useBluetootPrinter() {
           }
         );
 
-        await printMultipleToDevice(FIXED_PRINTER.address, [
+        await printMultipleToDevice(selectedPrinter.address, [
           { escPosCommands: kitchenEscPos, printerSize: "80mm" },
           { escPosCommands: clientEscPos, printerSize: "80mm" },
         ]);
@@ -254,7 +307,7 @@ export function useBluetootPrinter() {
 
       await enqueuePrintJob(printJob);
     },
-    [enqueuePrintJob, preferences.fullCutOn80mm, preferences.openDrawerOn80mm]
+    [enqueuePrintJob, getClientPrinter, preferences.fullCutOn80mm, preferences.openDrawerOn80mm]
   );
 
   const printBoth = useCallback(
@@ -282,6 +335,7 @@ export function useBluetootPrinter() {
     preferences,
     savePreferences,
     getClientPrinter,
+    selectClientPrinter,
     printClientTicket,
     printCashCutTicket,
     printKitchenOrder,
