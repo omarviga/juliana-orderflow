@@ -16,19 +16,19 @@ const STORAGE_KEY = "printerPreferences";
 const AVAILABLE_PRINTERS_KEY = "availablePrinters";
 const REQUIRE_SERVER_PRINT = false;
 const FORCE_80MM_ONLY = true;
-const FIXED_CLIENT_PRINTER_ID = "GLPrinter_80mm";
-const FIXED_KITCHEN_PRINTER_ID = "GLPrinter_80mm";
+const FIXED_CLIENT_PRINTER_ID = "AB:0A:FA:8F:3C:AA";
+const FIXED_KITCHEN_PRINTER_ID = "AB:0A:FA:8F:3C:AA";
 const FIXED_CLIENT_PRINTER: PrinterDevice = {
   id: FIXED_CLIENT_PRINTER_ID,
   address: FIXED_CLIENT_PRINTER_ID,
-  name: "GLPrinter_80mm",
+  name: "GLPrinter",
   type: "80mm",
   status: "connected",
 };
 const FIXED_KITCHEN_PRINTER: PrinterDevice = {
   id: FIXED_KITCHEN_PRINTER_ID,
   address: FIXED_KITCHEN_PRINTER_ID,
-  name: "GLPrinter_80mm",
+  name: "GLPrinter",
   type: "80mm",
   status: "connected",
 };

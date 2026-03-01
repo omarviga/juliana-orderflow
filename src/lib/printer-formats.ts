@@ -626,12 +626,16 @@ async function resolveBluetoothDevice(deviceAddress: string): Promise<BluetoothD
     const pairedDevices = await getDevices();
     const known = pairedDevices.find((device) => device.id === deviceAddress);
     if (known) return known;
+    const glPrinter = pairedDevices.find((device) =>
+      (device.name || "").toLowerCase().includes("glprinter")
+    );
+    if (glPrinter) return glPrinter;
+    if (pairedDevices.length > 0) return pairedDevices[0];
   }
 
   return navigator.bluetooth.requestDevice({
-    filters: [{ services: [PRINTER_BT_SERVICE_UUID] }],
+    acceptAllDevices: true,
     optionalServices: [PRINTER_BT_SERVICE_UUID, "0000180a-0000-1000-8000-00805f9b34fb"],
-    acceptAllDevices: false,
   });
 }
 
@@ -1071,7 +1075,7 @@ export function generateKitchenOrderEscPos(
   dateStr: string,
   options?: { fullCut?: boolean }
 ): number[] {
-  const config = PRINTER_CONFIGS["58mm"];
+  const config = PRINTER_CONFIGS["80mm"];
   const separator = "=".repeat(config.charsPerLine) + "\n";
 
   const commands = [

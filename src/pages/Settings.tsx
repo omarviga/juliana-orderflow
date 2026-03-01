@@ -853,7 +853,7 @@ export default function SettingsPage() {
                   <p className="mb-2 text-sm font-medium text-green-900 dark:text-green-400">
                     ✓ Fija
                   </p>
-                  <p className="text-sm text-green-800 dark:text-green-300">GLPrinter_80mm</p>
+                  <p className="text-sm text-green-800 dark:text-green-300">GLPrinter (AB:0A:FA:8F:3C:AA)</p>
                 </div>
               </CardContent>
             </Card>
@@ -873,7 +873,7 @@ export default function SettingsPage() {
                   <p className="mb-2 text-sm font-medium text-green-900 dark:text-green-400">
                     ✓ Fija
                   </p>
-                  <p className="text-sm text-green-800 dark:text-green-300">GLPrinter_80mm</p>
+                  <p className="text-sm text-green-800 dark:text-green-300">GLPrinter (AB:0A:FA:8F:3C:AA)</p>
                 </div>
               </CardContent>
             </Card>
