@@ -61,7 +61,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setSession(initialSession);
         setUser(initialSession?.user ?? null);
-        setIsLoading(false);
 
         if (initialSession?.user?.id) {
           try {
@@ -76,6 +75,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         } else {
           setRole(null);
+        }
+
+        if (isMounted) {
+          setIsLoading(false);
         }
       } catch {
         if (isMounted) {
@@ -94,25 +97,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!isMounted) return;
 
+      setIsLoading(true);
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
-      setIsLoading(false);
 
-      if (nextSession?.user?.id) {
-        void fetchUserRoleWithTimeout(nextSession.user.id)
-          .then((userRole) => {
+      void (async () => {
+        if (nextSession?.user?.id) {
+          try {
+            const userRole = await fetchUserRoleWithTimeout(nextSession.user.id);
             if (isMounted) {
               setRole(userRole);
             }
-          })
-          .catch(() => {
+          } catch {
             if (isMounted) {
               setRole(null);
             }
-          });
-      } else {
-        setRole(null);
-      }
+          }
+        } else {
+          setRole(null);
+        }
+
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      })();
     });
 
     return () => {

@@ -607,6 +607,24 @@ export async function printToDevice(
 
 const PRINTER_BT_SERVICE_UUID = "00001101-0000-1000-8000-00805f9b34fb";
 const FIXED_PRINTER_NAME = "glprinter";
+const KNOWN_PRINTER_SERVICE_UUIDS = [
+  PRINTER_BT_SERVICE_UUID,
+  "0000ffe0-0000-1000-8000-00805f9b34fb",
+  "0000fff0-0000-1000-8000-00805f9b34fb",
+  "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+  "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
+  "0000180a-0000-1000-8000-00805f9b34fb",
+] as const;
+const KNOWN_PRINTER_CHARACTERISTIC_UUIDS = [
+  "0000ffe1-0000-1000-8000-00805f9b34fb",
+  "0000fff1-0000-1000-8000-00805f9b34fb",
+  "49535343-8841-43f4-a8d4-ecbe34729bb3",
+  "6e400002-b5a3-f393-e0a9-e50e24dcca9e",
+] as const;
+
+function normalizeUuid(uuid: string): string {
+  return uuid.toLowerCase();
+}
 
 type ActiveBluetoothSession = {
   deviceAddress: string;
@@ -635,12 +653,12 @@ async function resolveBluetoothDevice(deviceAddress: string): Promise<BluetoothD
   try {
     return await navigator.bluetooth.requestDevice({
       filters: [{ namePrefix: "GL" }],
-      optionalServices: [PRINTER_BT_SERVICE_UUID, "0000180a-0000-1000-8000-00805f9b34fb"],
+      optionalServices: [...KNOWN_PRINTER_SERVICE_UUIDS],
     });
   } catch {
     return navigator.bluetooth.requestDevice({
       acceptAllDevices: true,
-      optionalServices: [PRINTER_BT_SERVICE_UUID, "0000180a-0000-1000-8000-00805f9b34fb"],
+      optionalServices: [...KNOWN_PRINTER_SERVICE_UUIDS],
     });
   }
 }
@@ -668,24 +686,56 @@ async function resolveWritableCharacteristic(
   }
 
   let characteristic: BluetoothRemoteGATTCharacteristic | null = null;
+  let selectedServiceUuid: string | null = null;
+  let selectedCharacteristicUuid: string | null = null;
+  const candidates: Array<{
+    serviceUuid: string;
+    characteristic: BluetoothRemoteGATTCharacteristic;
+    preferredIndex: number;
+    modeScore: number;
+  }> = [];
   for (const service of services) {
     const characteristics = await service.getCharacteristics();
-    const writableWithoutResponse = characteristics.find((c) => c.properties.writeWithoutResponse);
-    if (writableWithoutResponse) {
-      characteristic = writableWithoutResponse;
-      break;
-    }
+    characteristics.forEach((c) => {
+      const canWrite = c.properties.writeWithoutResponse || c.properties.write;
+      if (!canWrite) return;
+      const charUuid = normalizeUuid(c.uuid);
+      const preferredIndex = KNOWN_PRINTER_CHARACTERISTIC_UUIDS.indexOf(
+        charUuid as (typeof KNOWN_PRINTER_CHARACTERISTIC_UUIDS)[number]
+      );
+      const modeScore = c.properties.writeWithoutResponse ? 0 : 1;
+      candidates.push({
+        serviceUuid: service.uuid,
+        characteristic: c,
+        preferredIndex,
+        modeScore,
+      });
+    });
+  }
 
-    const writable = characteristics.find((c) => c.properties.write);
-    if (writable) {
-      characteristic = writable;
-      break;
-    }
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => {
+      const aPref = a.preferredIndex === -1 ? Number.MAX_SAFE_INTEGER : a.preferredIndex;
+      const bPref = b.preferredIndex === -1 ? Number.MAX_SAFE_INTEGER : b.preferredIndex;
+      if (aPref !== bPref) return aPref - bPref;
+      return a.modeScore - b.modeScore;
+    });
+
+    const best = candidates[0];
+    characteristic = best.characteristic;
+    selectedServiceUuid = best.serviceUuid;
+    selectedCharacteristicUuid = best.characteristic.uuid;
   }
 
   if (!characteristic) {
     throw new Error("No se encontró característica escribible en servicios GATT");
   }
+  console.log("Bluetooth write path:", {
+    service: selectedServiceUuid,
+    characteristic: selectedCharacteristicUuid,
+    writeWithoutResponse: characteristic.properties.writeWithoutResponse,
+    write: characteristic.properties.write,
+  });
 
   const handleDisconnected = () => {
     if (activeBluetoothSession?.device.id === device.id) {
@@ -735,14 +785,17 @@ export async function printMultipleToDevice(
     return [];
   });
 
-  console.log("Enviando", printData.length, "bytes a la impresora");
+  // Secuencia recomendada por fabricante JHP-A: ESC @, ESC t 2, ESC a 0.
+  const initSequence = [0x1b, 0x40, 0x1b, 0x74, 0x02, 0x1b, 0x61, 0x00];
+  const finalPrintData = [...initSequence, ...printData];
+  console.log("Enviando", finalPrintData.length, "bytes a la impresora");
 
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
       const characteristic = await resolveWritableCharacteristic(deviceAddress);
-      const chunkSize = characteristic.properties.writeWithoutResponse ? 180 : 256;
-      for (let i = 0; i < printData.length; i += chunkSize) {
-        const chunk = printData.slice(i, Math.min(i + chunkSize, printData.length));
+      const chunkSize = characteristic.properties.writeWithoutResponse ? 120 : 180;
+      for (let i = 0; i < finalPrintData.length; i += chunkSize) {
+        const chunk = finalPrintData.slice(i, Math.min(i + chunkSize, finalPrintData.length));
         const buffer = new Uint8Array(chunk);
 
         if (characteristic.properties.writeWithoutResponse) {
@@ -751,7 +804,7 @@ export async function printMultipleToDevice(
           await characteristic.writeValue(buffer);
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 40));
+        await new Promise((resolve) => setTimeout(resolve, 60));
       }
 
       console.log("Datos enviados exitosamente");
