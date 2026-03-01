@@ -1,52 +1,41 @@
-// useBluetootPrinter.ts - VERSIÓN SOLO ESC/POS
-
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
+import {
+  type CashCutDetails,
+  type CashCutCountSummary,
+  generateClientTicketEscPos,
+  generateCashCutTicketEscPos,
+  generateKitchenOrderEscPos,
+  printMultipleToDevice,
+} from "@/lib/printer-formats";
+import type { PrinterDevice, PrinterPreferences } from "@/types/printer";
 import type { CartItem } from "@/types/pos";
 import type { CashRegisterSale } from "@/lib/cash-register";
-import type { CashCutCountSummary, CashCutDetails } from "@/lib/printer-formats";
-import {
-  printClientTicket,
-  printKitchenOrder,
-  isEscPosAppAvailable,
-} from "@/lib/printer-formats";
-// ============================================
-// TIPOS
-// ============================================
-
-export interface PrinterDevice {
-  id: string;
-  address: string;
-  name: string;
-  type: "80mm" | "58mm" | null;
-  status: "connected" | "disconnected" | "pairing";
-  lastUsed?: Date;
-}
-
-export interface PrinterPreferences {
-  printers: Record<string, PrinterDevice>;
-  clientPrinterId?: string;
-  kitchenPrinterId?: string;
-  autoPrint: boolean;
-  useBluetoothIfAvailable: boolean;
-  fallbackToWeb: boolean;
-  openDrawerOn80mm: boolean;
-  fullCutOn80mm: boolean;
-}
-
-// ============================================
-// CONFIGURACIÓN
-// ============================================
 
 const STORAGE_KEY = "printerPreferences";
-const MAC_ADDRESS_KEY = "printerMacAddress";
-
-const DEFAULT_MAC = "00:11:22:33:44:55"; // Cambia esto por tu MAC real
-
+const AVAILABLE_PRINTERS_KEY = "availablePrinters";
+const REQUIRE_SERVER_PRINT = false;
+const FORCE_80MM_ONLY = true;
+const FIXED_CLIENT_PRINTER_ID = "GLPrinter_80mm";
+const FIXED_KITCHEN_PRINTER_ID = "GLPrinter_80mm";
+const FIXED_CLIENT_PRINTER: PrinterDevice = {
+  id: FIXED_CLIENT_PRINTER_ID,
+  address: FIXED_CLIENT_PRINTER_ID,
+  name: "GLPrinter_80mm",
+  type: "80mm",
+  status: "connected",
+};
+const FIXED_KITCHEN_PRINTER: PrinterDevice = {
+  id: FIXED_KITCHEN_PRINTER_ID,
+  address: FIXED_KITCHEN_PRINTER_ID,
+  name: "GLPrinter_80mm",
+  type: "80mm",
+  status: "connected",
+};
 const DEFAULT_PREFERENCES: PrinterPreferences = {
   printers: {},
-  clientPrinterId: undefined,
-  kitchenPrinterId: undefined,
+  clientPrinterId: FIXED_CLIENT_PRINTER_ID,
+  kitchenPrinterId: FIXED_KITCHEN_PRINTER_ID,
   autoPrint: true,
   useBluetoothIfAvailable: true,
   fallbackToWeb: false,
@@ -54,103 +43,178 @@ const DEFAULT_PREFERENCES: PrinterPreferences = {
   fullCutOn80mm: true,
 };
 
-const normalizePaymentLabel = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+function enforceServerOnlyPreferences(prefs: PrinterPreferences): PrinterPreferences {
+  if (!REQUIRE_SERVER_PRINT) return prefs;
+  return {
+    ...prefs,
+    autoPrint: true,
+    useBluetoothIfAvailable: false,
+    fallbackToWeb: false,
+  };
+}
 
-const shouldOpenDrawerForPayment = (
-  paymentMethodLabel: string,
-  enabledInSettings: boolean
-) => enabledInSettings && normalizePaymentLabel(paymentMethodLabel) === "efectivo";
+function enforce80mmOnlyPreferences(prefs: PrinterPreferences): PrinterPreferences {
+  if (!FORCE_80MM_ONLY) return prefs;
+  const normalizedPrinters: Record<string, PrinterDevice> = {};
+  Object.entries(prefs.printers || {}).forEach(([id, printer]) => {
+    normalizedPrinters[id] = {
+      ...printer,
+      type: printer.type === "58mm" ? "80mm" : printer.type,
+    };
+  });
+  const clientPrinterId = prefs.clientPrinterId || FIXED_CLIENT_PRINTER_ID;
+  return {
+    ...prefs,
+    printers: normalizedPrinters,
+    clientPrinterId,
+    kitchenPrinterId: clientPrinterId,
+    useBluetoothIfAvailable: true,
+    fallbackToWeb: false,
+  };
+}
 
-// ============================================
-// HOOK PRINCIPAL
-// ============================================
+function normalizePrinter(
+  value: unknown,
+  fallbackId?: string
+): PrinterDevice | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Partial<PrinterDevice> & Record<string, unknown>;
+  const id = typeof raw.id === "string" && raw.id ? raw.id : fallbackId;
+  const address =
+    typeof raw.address === "string" && raw.address
+      ? raw.address
+      : id;
+
+  if (!id || !address) return undefined;
+
+  return {
+    id,
+    address,
+    name: typeof raw.name === "string" && raw.name ? raw.name : "Impresora Bluetooth",
+    type: raw.type === "80mm" || raw.type === "58mm" ? raw.type : null,
+    status:
+      raw.status === "connected" || raw.status === "disconnected" || raw.status === "pairing"
+        ? raw.status
+        : "disconnected",
+    lastUsed: raw.lastUsed instanceof Date ? raw.lastUsed : undefined,
+  };
+}
+
+function normalizePrintersMap(input: unknown): Record<string, PrinterDevice> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
+  const map = input as Record<string, unknown>;
+  const normalized: Record<string, PrinterDevice> = {};
+  Object.entries(map).forEach(([key, value]) => {
+    const printer = normalizePrinter(value, key);
+    if (printer) normalized[printer.id] = printer;
+  });
+  return normalized;
+}
 
 export function useBluetootPrinter() {
-  const [macAddress, setMacAddress] = useState<string>(() => {
-    return localStorage.getItem(MAC_ADDRESS_KEY) || DEFAULT_MAC;
-  });
-
   const [preferences, setPreferences] = useState<PrinterPreferences>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        return JSON.parse(stored);
-      } catch {
-        return DEFAULT_PREFERENCES;
-      }
-    }
-    return DEFAULT_PREFERENCES;
-  });
+    if (!stored) return enforceServerOnlyPreferences(DEFAULT_PREFERENCES);
 
-  const [isPrinting, setIsPrinting] = useState(false);
-  const [printQueue, setPrintQueue] = useState<Array<() => Promise<void>>>([]);
+    try {
+      const parsed = JSON.parse(stored) as Partial<PrinterPreferences> & {
+        clientPrinter80mm?: PrinterDevice;
+        kitchenPrinter58mm?: PrinterDevice;
+      };
+      const migratedPrinters = normalizePrintersMap(parsed.printers);
 
-  // ============================================
-  // FUNCIONES DE CONFIGURACIÓN
-  // ============================================
-
-  const saveMacAddress = useCallback((newMac: string) => {
-    setMacAddress(newMac);
-    localStorage.setItem(MAC_ADDRESS_KEY, newMac);
-    toast.success("MAC address guardada");
-  }, []);
-
-  const savePreferences = useCallback((prefs: PrinterPreferences) => {
-    setPreferences(prefs);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-  }, []);
-
-  const updatePrinterType = useCallback((
-    printerId: string,
-    type: "80mm" | "58mm" | null
-  ) => {
-    setPreferences((prev) => {
-      const newPrinters = { ...prev.printers };
-
-      if (!newPrinters[printerId]) {
-        newPrinters[printerId] = {
-          id: printerId,
-          address: printerId,
-          name: `Impresora ${printerId.slice(0, 8)}`,
-          type: null,
+      if (parsed.clientPrinter80mm?.address) {
+        migratedPrinters[parsed.clientPrinter80mm.address] = {
+          id: parsed.clientPrinter80mm.address,
+          address: parsed.clientPrinter80mm.address,
+          name: parsed.clientPrinter80mm.name || "Impresora 80mm",
+          type: "80mm",
           status: "disconnected",
         };
       }
 
-      // Si estamos asignando un tipo, quitar ese tipo de otras impresoras
-      if (type) {
-        Object.keys(newPrinters).forEach((key) => {
-          if (newPrinters[key]?.type === type) {
-            newPrinters[key] = { ...newPrinters[key], type: null };
-          }
-        });
+      if (parsed.kitchenPrinter58mm?.address) {
+        migratedPrinters[parsed.kitchenPrinter58mm.address] = {
+          id: parsed.kitchenPrinter58mm.address,
+          address: parsed.kitchenPrinter58mm.address,
+          name: parsed.kitchenPrinter58mm.name || "Impresora 58mm",
+          type: "58mm",
+          status: "disconnected",
+        };
       }
 
-      newPrinters[printerId] = {
-        ...newPrinters[printerId],
-        type,
-      };
+      return enforce80mmOnlyPreferences(enforceServerOnlyPreferences({
+        ...DEFAULT_PREFERENCES,
+        ...parsed,
+        printers: migratedPrinters,
+        clientPrinterId:
+          parsed.clientPrinterId || parsed.clientPrinter80mm?.address || DEFAULT_PREFERENCES.clientPrinterId,
+        kitchenPrinterId:
+          parsed.kitchenPrinterId || parsed.kitchenPrinter58mm?.address || DEFAULT_PREFERENCES.kitchenPrinterId,
+      }));
+    } catch {
+      localStorage.removeItem(STORAGE_KEY);
+      return enforce80mmOnlyPreferences(enforceServerOnlyPreferences(DEFAULT_PREFERENCES));
+    }
+  });
 
-      const newPrefs = {
-        ...prev,
-        printers: newPrinters,
-        clientPrinterId: type === "80mm" ? printerId : prev.clientPrinterId,
-        kitchenPrinterId: type === "58mm" ? printerId : prev.kitchenPrinterId,
-      };
+  const [availablePrinters, setAvailablePrinters] = useState<PrinterDevice[]>(() => {
+    const saved = localStorage.getItem(AVAILABLE_PRINTERS_KEY);
+    if (!saved) return [];
 
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
-      return newPrefs;
-    });
-  }, []);
+    try {
+      const parsed = JSON.parse(saved) as Array<Pick<PrinterDevice, "address" | "name">>;
+      return parsed.map((printer) => ({
+        address: printer.address,
+        name: printer.name,
+        id: printer.address,
+        type: preferences.printers[printer.address]?.type ?? null,
+        status: "disconnected",
+      }));
+    } catch (error) {
+      console.error("Error parsing saved printers:", error);
+      localStorage.removeItem(AVAILABLE_PRINTERS_KEY);
+      return [];
+    }
+  });
+  const [isScanning, setIsScanning] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [printQueue, setPrintQueue] = useState<Array<() => Promise<void>>>([]);
+  const openDrawerOn80mm = preferences.openDrawerOn80mm;
+  const fullCutOn80mm = preferences.fullCutOn80mm;
 
-  // ============================================
-  // FUNCIONES DE IMPRESIÓN
-  // ============================================
+  // Sincronizar tipos guardados con la lista visible de impresoras.
+  useEffect(() => {
+    const printers = normalizePrintersMap(preferences.printers);
+    setAvailablePrinters((prev) =>
+      prev.map((printer) => {
+        const savedPrinter = printers[printer.address];
+        if (!savedPrinter) return { ...printer, type: null };
+        return {
+          ...printer,
+          type: savedPrinter.type ?? null,
+        };
+      })
+    );
+  }, [preferences.printers]);
+
+  // Persistir listado de impresoras para rehidratacion rapida en UI.
+  useEffect(() => {
+    if (availablePrinters.length === 0) {
+      localStorage.removeItem(AVAILABLE_PRINTERS_KEY);
+      return;
+    }
+
+    localStorage.setItem(
+      AVAILABLE_PRINTERS_KEY,
+      JSON.stringify(
+        availablePrinters.map((printer) => ({
+          address: printer.address,
+          name: printer.name,
+        }))
+      )
+    );
+  }, [availablePrinters]);
 
   const enqueuePrintJob = useCallback((job: () => Promise<void>) => {
     return new Promise<void>((resolve, reject) => {
@@ -162,15 +226,222 @@ export function useBluetootPrinter() {
             resolve();
           } catch (error) {
             reject(error);
+            throw error;
           }
         },
       ]);
     });
   }, []);
 
+  // Guardar preferencias
+  const savePreferences = useCallback((prefs: PrinterPreferences) => {
+    const normalizedPrefsBase: PrinterPreferences = {
+      ...DEFAULT_PREFERENCES,
+      ...prefs,
+      printers: normalizePrintersMap(prefs.printers),
+    };
+    const normalizedPrefs = enforce80mmOnlyPreferences(enforceServerOnlyPreferences(normalizedPrefsBase));
+    setPreferences(normalizedPrefs);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedPrefs));
+  }, []);
+
+  const resetPrinterStorage = useCallback(() => {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(AVAILABLE_PRINTERS_KEY);
+    setPreferences(enforce80mmOnlyPreferences(enforceServerOnlyPreferences(DEFAULT_PREFERENCES)));
+    setAvailablePrinters([]);
+  }, []);
+
+  // Escanear impresoras Bluetooth disponibles
+  const scanForPrinters = useCallback(async () => {
+    if (!navigator.bluetooth) {
+      toast.error("Web Bluetooth no disponible");
+      return undefined;
+    }
+
+    setIsScanning(true);
+
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: ["00001101-0000-1000-8000-00805f9b34fb"],
+      });
+
+      const newPrinter: PrinterDevice = {
+        address: device.id,
+        name: device.name || "Impresora Bluetooth",
+        id: device.id,
+        type: null,
+        status: "disconnected",
+        lastUsed: new Date(),
+      };
+
+      setAvailablePrinters((prev) => {
+        const exists = prev.some((p) => p.address === device.id);
+        if (exists) return prev;
+        return [...prev, newPrinter];
+      });
+
+      setPreferences((prev) => {
+        if (prev.printers[newPrinter.id]) {
+          return prev;
+        }
+        const newPrefs: PrinterPreferences = {
+          ...prev,
+          printers: {
+            ...prev.printers,
+            [newPrinter.id]: newPrinter,
+          },
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
+        return newPrefs;
+      });
+
+      return newPrinter;
+    } catch (error) {
+      if (error instanceof Error && !error.message.includes("User cancelled")) {
+        console.error("Error scanning:", error);
+        toast.error("Error al escanear impresoras");
+      }
+      return undefined;
+    } finally {
+      setIsScanning(false);
+    }
+  }, []);
+
+  // Asignar tipo a una impresora
+  const assignPrinterType = useCallback(
+    (printerId: string, type: "80mm" | "58mm" | null) => {
+      try {
+        setPreferences((prev) => {
+          const updatedPrinters = { ...normalizePrintersMap(prev.printers) };
+
+          // Crear registro si no existe para evitar estados inconsistentes.
+          if (!updatedPrinters[printerId]) {
+            const knownPrinter = availablePrinters.find((p) => p.address === printerId);
+            updatedPrinters[printerId] = {
+              id: printerId,
+              address: printerId,
+              name: knownPrinter?.name || "Impresora Bluetooth",
+              type: null,
+              status: "disconnected",
+            };
+          }
+
+          if (type) {
+            Object.keys(updatedPrinters).forEach((key) => {
+              if (updatedPrinters[key]?.type === type) {
+                updatedPrinters[key] = { ...updatedPrinters[key], type: null };
+              }
+            });
+          }
+
+          updatedPrinters[printerId] = {
+            ...updatedPrinters[printerId],
+            type,
+          };
+
+          const newPrefs: PrinterPreferences = {
+            ...prev,
+            printers: updatedPrinters,
+            clientPrinterId: prev.clientPrinterId,
+            kitchenPrinterId: prev.kitchenPrinterId,
+          };
+
+          if (type === "80mm") {
+            newPrefs.clientPrinterId = printerId;
+          } else if (type === "58mm") {
+            newPrefs.kitchenPrinterId = printerId;
+          } else {
+            if (prev.clientPrinterId === printerId) {
+              newPrefs.clientPrinterId = undefined;
+            }
+            if (prev.kitchenPrinterId === printerId) {
+              newPrefs.kitchenPrinterId = undefined;
+            }
+          }
+
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
+          return newPrefs;
+        });
+
+        setAvailablePrinters((prev) =>
+          prev.map((printer) =>
+            printer.id === printerId
+              ? { ...printer, type }
+              : type && printer.type === type
+                ? { ...printer, type: null }
+                : printer
+          )
+        );
+      } catch (error) {
+        console.error("Error al asignar tipo de impresora:", error);
+        toast.error("Error al asignar impresora. Repara la configuración e intenta de nuevo.");
+      }
+    },
+    [availablePrinters]
+  );
+
+  // Obtener impresora asignada a cliente (80mm)
+  const getClientPrinter = useCallback((): PrinterDevice | undefined => {
+    if (preferences.clientPrinterId && preferences.printers[preferences.clientPrinterId]) {
+      return preferences.printers[preferences.clientPrinterId];
+    }
+    return FIXED_CLIENT_PRINTER;
+  }, [preferences]);
+
+  // Obtener impresora asignada a cocina (58mm)
+  const getKitchenPrinter = useCallback((): PrinterDevice | undefined => {
+    return getClientPrinter();
+  }, [getClientPrinter]);
+
+  // Eliminar impresora
+  const removePrinter = useCallback((printerId: string) => {
+    setPreferences((prev) => {
+      const updatedPrinters = { ...prev.printers };
+      delete updatedPrinters[printerId];
+
+      const newPrefs: PrinterPreferences = {
+        ...prev,
+        printers: updatedPrinters,
+      };
+
+      if (prev.clientPrinterId === printerId) {
+        newPrefs.clientPrinterId = undefined;
+      }
+      if (prev.kitchenPrinterId === printerId) {
+        newPrefs.kitchenPrinterId = undefined;
+      }
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(newPrefs));
+      return newPrefs;
+    });
+
+    setAvailablePrinters((prev) => prev.filter((p) => p.id !== printerId));
+  }, []);
+
+  // Compatibilidad con UI existente
+  const pairClientPrinter = useCallback(async () => {
+    const printer = await scanForPrinters();
+    if (!printer) return false;
+    assignPrinterType(printer.id, "80mm");
+    toast.success(`Impresora "${printer.name}" asignada a cliente`);
+    return true;
+  }, [assignPrinterType, scanForPrinters]);
+
+  const pairKitchenPrinter = useCallback(async () => {
+    const printer = await scanForPrinters();
+    if (!printer) return false;
+    assignPrinterType(printer.id, "80mm");
+    toast.success(`Impresora "${printer.name}" asignada a cocina (80mm)`);
+    return true;
+  }, [assignPrinterType, scanForPrinters]);
+
   // Procesar cola de impresión
   useEffect(() => {
-    const processQueue = async () => {
+    let isMounted = true;
+
+    const processPrintQueue = async () => {
       if (printQueue.length === 0 || isPrinting) return;
 
       setIsPrinting(true);
@@ -180,322 +451,281 @@ export function useBluetootPrinter() {
         await job();
       } catch (error) {
         console.error("Error en trabajo de impresión:", error);
-        toast.error("Error al imprimir");
       } finally {
-        setPrintQueue((prev) => prev.slice(1));
-        setIsPrinting(false);
+        if (isMounted) {
+          setPrintQueue((prev) => prev.slice(1));
+          setIsPrinting(false);
+        }
       }
     };
 
-    void processQueue();
+    processPrintQueue();
+
+    return () => {
+      isMounted = false;
+    };
   }, [printQueue, isPrinting]);
 
-  // ============================================
-  // IMPRESIÓN DE TICKETS
-  // ============================================
+  // Imprimir ticket del cliente
+  const printClientTicket = useCallback(
+    async (
+      items: CartItem[],
+      total: number,
+      orderNumber: number | null,
+      customerName: string,
+      dateStr: string,
+      paymentMethodLabel: string = "Efectivo"
+    ) => {
+      const printJob = async () => {
+        try {
+          const clientPrinter = getClientPrinter();
+          if (!clientPrinter?.address) {
+            throw new Error("No hay impresora Bluetooth 80mm configurada.");
+          }
 
-  const printClientTicket = useCallback(async (
-    items: CartItem[],
-    total: number,
-    orderNumber: number | null,
-    customerName: string,
-    dateStr: string,
-    paymentMethodLabel: string = "Efectivo"
-  ) => {
-    const job = async () => {
-      try {
-        if (!isEscPosAppAvailable()) {
-          throw new Error("ESC/POS PrintService no disponible");
+          const escPosCommands = generateClientTicketEscPos(
+            items,
+            total,
+            orderNumber,
+            customerName,
+            dateStr,
+            paymentMethodLabel,
+            {
+                openDrawer: openDrawerOn80mm,
+                fullCut: fullCutOn80mm,
+              }
+            );
+
+          await printMultipleToDevice(clientPrinter.address, [
+            {
+              escPosCommands,
+              printerSize: "80mm",
+              options: {
+                openDrawer: openDrawerOn80mm,
+                fullCut: fullCutOn80mm,
+              },
+            },
+          ]);
+          toast.success("Ticket de cliente enviado a impresora");
+        } catch (error) {
+          console.error("Error al imprimir ticket:", error);
+          toast.error("Error al imprimir ticket");
+          throw error;
         }
-        const openDrawer = shouldOpenDrawerForPayment(
-          paymentMethodLabel,
-          preferences.openDrawerOn80mm
-        );
+      };
 
-        const success = await printClientTicketEscPos(
-          macAddress,
+      await enqueuePrintJob(printJob);
+    },
+    [enqueuePrintJob, getClientPrinter, fullCutOn80mm, openDrawerOn80mm]
+  );
+
+  const printCashCutTicket = useCallback(
+    async (
+      sales: CashRegisterSale[],
+      generatedAt: string,
+      title: string = "CORTE DE CAJA",
+      countSummary?: CashCutCountSummary,
+      details?: CashCutDetails
+    ) => {
+      const printJob = async () => {
+        try {
+          const clientPrinter = getClientPrinter();
+          if (!clientPrinter?.address) {
+            throw new Error("No hay impresora Bluetooth 80mm configurada.");
+          }
+          const escPosCommands = generateCashCutTicketEscPos(
+            sales,
+            generatedAt,
+            title,
+            countSummary,
+            details,
+            {
+              openDrawer: openDrawerOn80mm,
+              fullCut: fullCutOn80mm,
+            }
+          );
+          await printMultipleToDevice(clientPrinter.address, [
+            {
+              escPosCommands,
+              printerSize: "80mm",
+              options: {
+                openDrawer: openDrawerOn80mm,
+                fullCut: fullCutOn80mm,
+              },
+            },
+          ]);
+        } catch (error) {
+          console.error("Error al imprimir corte de caja:", error);
+          toast.error("Error al imprimir corte de caja");
+          throw error;
+        }
+      };
+
+      await enqueuePrintJob(printJob);
+    },
+    [enqueuePrintJob, getClientPrinter, fullCutOn80mm, openDrawerOn80mm]
+  );
+
+  // Imprimir comanda de cocina
+  const printKitchenOrder = useCallback(
+    async (
+      items: CartItem[],
+      orderNumber: number | null,
+      customerName: string,
+      dateStr: string
+    ) => {
+      const printJob = async () => {
+        try {
+          const clientPrinter = getClientPrinter();
+          const printerSize = "80mm" as const;
+          if (!clientPrinter?.address) {
+            throw new Error("No hay impresora Bluetooth 80mm configurada.");
+          }
+
+          const escPosCommands = generateKitchenOrderEscPos(
+            items,
+            orderNumber,
+            customerName,
+            dateStr
+          );
+
+          await printMultipleToDevice(clientPrinter.address, [
+            {
+              escPosCommands,
+              printerSize,
+            },
+          ]);
+          toast.success("Comanda de cocina enviada a impresora");
+        } catch (error) {
+          console.error("Error al imprimir comanda:", error);
+          toast.error("Error al imprimir comanda");
+          throw error;
+        }
+      };
+
+      await enqueuePrintJob(printJob);
+    },
+    [enqueuePrintJob, getClientPrinter]
+  );
+
+  const printKitchenAndClientCombined = useCallback(
+    async (
+      items: CartItem[],
+      total: number,
+      orderNumber: number | null,
+      customerName: string,
+      dateStr: string,
+      paymentMethodLabel: string = "Efectivo"
+    ) => {
+      const printJob = async () => {
+        const clientPrinter = getClientPrinter();
+        const clientP = clientPrinter?.address ? clientPrinter : undefined;
+        if (!clientP) {
+          throw new Error("No hay impresora Bluetooth 80mm configurada.");
+        }
+
+        const kitchenEscPos = generateKitchenOrderEscPos(items, orderNumber, customerName, dateStr);
+        const clientEscPos = generateClientTicketEscPos(
           items,
           total,
           orderNumber,
           customerName,
           dateStr,
           paymentMethodLabel,
-          {
-            openDrawer,
-            fullCut: preferences.fullCutOn80mm,
-            drawerNumber: 2 // Usando cajón 2 como configuraste
-          }
+          { openDrawer: openDrawerOn80mm, fullCut: fullCutOn80mm }
         );
 
-        if (success) {
-          toast.success("Ticket enviado a impresora");
-        } else {
-          throw new Error("Error al imprimir");
-        }
-      } catch (error) {
-        console.error("Error imprimiendo ticket:", error);
-        toast.error("Error al imprimir ticket");
-        throw error;
-      }
-    };
+        await printMultipleToDevice(clientP.address, [
+          { escPosCommands: kitchenEscPos, printerSize: "80mm" },
+          { escPosCommands: clientEscPos, printerSize: "80mm" },
+        ]);
+        toast.success("Comanda y ticket enviados a impresora 80mm");
+      };
 
-    await enqueuePrintJob(job);
-  }, [macAddress, preferences, enqueuePrintJob]);
+      await enqueuePrintJob(printJob);
+    },
+    [enqueuePrintJob, getClientPrinter, fullCutOn80mm, openDrawerOn80mm]
+  );
 
-  const printKitchenOrder = useCallback(async (
-    items: CartItem[],
-    orderNumber: number | null,
-    customerName: string,
-    dateStr: string
-  ) => {
-    const job = async () => {
-      try {
-        if (!isEscPosAppAvailable()) {
-          throw new Error("ESC/POS PrintService no disponible");
-        }
+  // Imprimir ambos documentos (cliente y cocina)
+  const printBoth = useCallback(
+    async (
+      items: CartItem[],
+      total: number,
+      orderNumber: number | null,
+      customerName: string,
+      dateStr: string,
+      paymentMethodLabel: string = "Efectivo"
+    ) => {
+      await printKitchenAndClientCombined(
+        items,
+        total,
+        orderNumber,
+        customerName,
+        dateStr,
+        paymentMethodLabel
+      );
+    },
+    [printKitchenAndClientCombined]
+  );
 
-        const success = await printKitchenOrderEscPos(
-          macAddress,
-          items,
-          orderNumber,
-          customerName,
-          dateStr,
-          { fullCut: preferences.fullCutOn80mm }
-        );
-
-        if (success) {
-          toast.success("Comanda enviada a cocina");
-        } else {
-          throw new Error("Error al imprimir");
-        }
-      } catch (error) {
-        console.error("Error imprimiendo comanda:", error);
-        toast.error("Error al imprimir comanda");
-        throw error;
-      }
-    };
-
-    await enqueuePrintJob(job);
-  }, [macAddress, preferences, enqueuePrintJob]);
-
-  const printBoth = useCallback(async (
-    items: CartItem[],
-    total: number,
-    orderNumber: number | null,
-    customerName: string,
-    dateStr: string,
-    paymentMethodLabel: string = "Efectivo"
-  ) => {
-    const job = async () => {
-      try {
-        if (!isEscPosAppAvailable()) {
-          throw new Error("ESC/POS PrintService no disponible");
-        }
-        const openDrawer = shouldOpenDrawerForPayment(
-          paymentMethodLabel,
-          preferences.openDrawerOn80mm
-        );
-
-        const kitchenSuccess = await printKitchenOrderEscPos(
-          macAddress,
-          items,
-          orderNumber,
-          customerName,
-          dateStr
-        );
-
-        if (!kitchenSuccess) {
-          throw new Error("Error al imprimir comanda");
-        }
-
-        const clientSuccess = await printClientTicketEscPos(
-          macAddress,
-          items,
-          total,
-          orderNumber,
-          customerName,
-          dateStr,
-          paymentMethodLabel,
-          {
-            openDrawer,
-            drawerNumber: 2
-          }
-        );
-
-        if (!clientSuccess) {
-          throw new Error("Error al imprimir ticket");
-        }
-
-        toast.success("Comanda y ticket enviados");
-      } catch (error) {
-        console.error("Error imprimiendo ambos:", error);
-        toast.error("Error al imprimir");
-        throw error;
-      }
-    };
-
-    await enqueuePrintJob(job);
-  }, [macAddress, preferences, enqueuePrintJob]);
-
-  const printKitchenAndClientCombined = useCallback(async (
-    items: CartItem[],
-    total: number,
-    orderNumber: number | null,
-    customerName: string,
-    dateStr: string,
-    paymentMethodLabel: string = "Efectivo"
-  ) => {
-    await printBoth(items, total, orderNumber, customerName, dateStr, paymentMethodLabel);
-  }, [printBoth]);
-
-  const printCashCutTicket = useCallback(async (
-    sales: CashRegisterSale[],
-    generatedAt: string,
-    title: string = "CORTE DE CAJA",
-    countSummary?: CashCutCountSummary,
-    details?: CashCutDetails
-  ) => {
-    const job = async () => {
-      const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
-      const cashSales = sales.filter((sale) => sale.paymentMethod === "efectivo").reduce((sum, sale) => sum + sale.total, 0);
-      const cardSales = sales.filter((sale) => sale.paymentMethod === "tarjeta").reduce((sum, sale) => sum + sale.total, 0);
-      const rows = sales
-        .map((sale) => {
-          const hour = new Date(sale.createdAt).toLocaleTimeString("es-MX", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-          });
-          return `${hour}  #${sale.orderNumber}  ${sale.paymentMethod.toUpperCase()}  $${sale.total.toFixed(0)}`;
-        })
-        .join("\n");
-
-      const countSection = countSummary
-        ? `\nCONTEO EFECTIVO\nEsperado: $${countSummary.expectedCash.toFixed(0)}\nContado: $${countSummary.countedCash.toFixed(0)}\nDiferencia: $${countSummary.difference.toFixed(0)}\n`
-        : "";
-
-      const openingSection = details?.opening
-        ? `\nAPERTURA: $${details.opening.amount.toFixed(0)}\n${details.opening.note || "Apertura"}\n`
-        : "";
-
-      const text = `${title}
-${generatedAt}
---------------------------------
-VENTAS: ${sales.length}
-EFECTIVO: $${cashSales.toFixed(0)}
-TARJETA: $${cardSales.toFixed(0)}
-TOTAL: $${totalSales.toFixed(0)}
-${countSection}${openingSection}
-DETALLE
-${rows}
-`;
-
-      const html = `<html><head><meta charset="UTF-8"></head><body><pre>${text}</pre></body></html>`;
-      await printToDevice(macAddress, html, "80mm", {
-        openDrawer: preferences.openDrawerOn80mm,
-        fullCut: preferences.fullCutOn80mm,
-      });
-      toast.success("Corte de caja enviado a impresora");
-    };
-
-    await enqueuePrintJob(job);
-  }, [enqueuePrintJob, macAddress, preferences.openDrawerOn80mm, preferences.fullCutOn80mm]);
-
-  // ============================================
-  // FUNCIONES PARA COMPATIBILIDAD (no hacen nada)
-  // ============================================
-
-  // Estas funciones existen solo para no romper el código existente
-  const scanForPrinters = useCallback(async () => {
-    toast.info("En Android usa la MAC address directamente");
-    return undefined;
-  }, []);
-
-  const pairClientPrinter = useCallback(async () => {
-    toast.info("Ingresa la MAC address de la impresora 80mm");
-    return false;
-  }, []);
-
-  const pairKitchenPrinter = useCallback(async () => {
-    toast.info("Ingresa la MAC address de la impresora 58mm");
-    return false;
-  }, []);
-
+  // Desemparejar impresora 80mm
   const unpairClientPrinter = useCallback(() => {
-    // No hace nada
-  }, []);
+    const printerId = preferences.clientPrinterId;
+    if (!printerId) return;
 
+    const updatedPrinters = { ...preferences.printers };
+    if (updatedPrinters[printerId]) {
+      updatedPrinters[printerId] = { ...updatedPrinters[printerId], type: null };
+    }
+    const newPrefs: PrinterPreferences = {
+      ...preferences,
+      printers: updatedPrinters,
+      clientPrinterId: undefined,
+    };
+    savePreferences(newPrefs);
+    toast.success("Impresora 80mm desemparejada");
+  }, [preferences, savePreferences]);
+
+  // Desemparejar impresora 58mm
   const unpairKitchenPrinter = useCallback(() => {
-    // No hace nada
-  }, []);
+    const printerId = preferences.kitchenPrinterId;
+    if (!printerId) return;
 
-  const assignPrinterType = updatePrinterType;
-
-  const removePrinter = useCallback(() => {
-    // No hace nada
-  }, []);
-
-  const resetPrinterStorage = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(MAC_ADDRESS_KEY);
-    setPreferences(DEFAULT_PREFERENCES);
-    setMacAddress(DEFAULT_MAC);
-    toast.success("Configuración reiniciada");
-  }, []);
-
-  // ============================================
-  // RETURN
-  // ============================================
+    const updatedPrinters = { ...preferences.printers };
+    if (updatedPrinters[printerId]) {
+      updatedPrinters[printerId] = { ...updatedPrinters[printerId], type: null };
+    }
+    const newPrefs: PrinterPreferences = {
+      ...preferences,
+      printers: updatedPrinters,
+      kitchenPrinterId: undefined,
+    };
+    savePreferences(newPrefs);
+    toast.success("Impresora 58mm desemparejada");
+  }, [preferences, savePreferences]);
 
   return {
-    // Estado
     preferences,
-    macAddress,
-    isPrinting,
-    queueLength: printQueue.length,
-    availablePrinters: [], // Vacío porque no usamos escaneo
-    isScanning: false,
-
-    // Funciones de configuración
-    saveMacAddress,
+    availablePrinters,
+    isScanning,
     savePreferences,
+    scanForPrinters,
     assignPrinterType,
+    getClientPrinter,
+    getKitchenPrinter,
     removePrinter,
     resetPrinterStorage,
-
-    // Funciones de impresión (las importantes)
-    printClientTicket,
-    printKitchenOrder,
-    printBoth,
-    printKitchenAndClientCombined,
-    printCashCutTicket,
-
-    // Funciones de compatibilidad (no hacen nada)
-    scanForPrinters,
     pairClientPrinter,
     pairKitchenPrinter,
     unpairClientPrinter,
     unpairKitchenPrinter,
-
-    // Getters
-    getClientPrinter: useCallback(() => {
-      return preferences.clientPrinterId ? {
-        id: preferences.clientPrinterId,
-        address: preferences.clientPrinterId,
-        name: "Impresora 80mm",
-        type: "80mm" as const,
-        status: "connected" as const,
-      } : undefined;
-    }, [preferences.clientPrinterId]),
-
-    getKitchenPrinter: useCallback(() => {
-      return preferences.kitchenPrinterId ? {
-        id: preferences.kitchenPrinterId,
-        address: preferences.kitchenPrinterId,
-        name: "Impresora 58mm",
-        type: "58mm" as const,
-        status: "connected" as const,
-      } : undefined;
-    }, [preferences.kitchenPrinterId]),
+    printClientTicket,
+    printCashCutTicket,
+    printKitchenOrder,
+    printKitchenAndClientCombined,
+    printBoth,
+    isPrinting,
+    queueLength: printQueue.length,
   };
 }

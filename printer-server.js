@@ -24,9 +24,23 @@ const DEFAULT_BUSINESS_PHONE = "TEL | WHATSAPP:  417 206 9111";
 const PRINTER_80MM_NAME = process.env.PRINTER_80MM_NAME || "GLPrinter_80mm";
 const PRINTER_58MM_NAME = process.env.PRINTER_58MM_NAME || PRINTER_80MM_NAME;
 const LP_TIMEOUT_MS = Number(process.env.LP_TIMEOUT_MS || 12000);
+const ENABLE_WEB_PRINT_SERVICE = false;
 
 app.use(cors());
 app.use(express.json());
+app.use((req, res, next) => {
+  if (
+    !ENABLE_WEB_PRINT_SERVICE &&
+    (req.path.startsWith("/api/print") || req.path.startsWith("/api/print-ticket"))
+  ) {
+    res.status(410).json({
+      ok: false,
+      error: "Modo ESC/POS estricto: servicio web de impresion deshabilitado",
+    });
+    return;
+  }
+  next();
+});
 
 function printWithLp({ destination, title, text, timeoutMs = LP_TIMEOUT_MS, raw = false }) {
   return new Promise((resolve, reject) => {
@@ -173,19 +187,36 @@ async function getPrintersStatus() {
 
 const ESC_POS = {
   INIT: Buffer.from([0x1b, 0x40]),
-  OPEN_DRAWER: Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]),
-  PARTIAL_CUT: Buffer.from([0x1d, 0x56, 0x42, 0x00]),
+  CODE_PAGE_CP850: Buffer.from([0x1b, 0x74, 0x02]),
+  ALIGN_LEFT: Buffer.from([0x1b, 0x61, 0x00]),
+  OPEN_DRAWER: Buffer.from([0x1b, 0x70, 0x00, 0x32, 0xfa]),
+  PARTIAL_CUT: Buffer.from([0x1d, 0x56, 0x01]),
   FULL_CUT: Buffer.from([0x1d, 0x56, 0x00]),
+  FEED_3_LINES: Buffer.from([0x1b, 0x64, 0x03]),
 };
 
 function buildEscPosDocument(lines, options = {}) {
   const { includeInit = false, openDrawer = false, fullCut = true } = options;
-  const text = `${lines.join("\n")}\n\n`;
+  const text = `${lines
+    .map((line) =>
+      String(line)
+        .replace(/\r\n/g, "\n")
+        .replace(/•/g, "-")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^\x20-\x7E\n]/g, "")
+    )
+    .join("\n")}\n\n`;
   const chunks = [];
 
-  if (includeInit) chunks.push(ESC_POS.INIT);
+  if (includeInit) {
+    chunks.push(ESC_POS.INIT);
+    chunks.push(ESC_POS.CODE_PAGE_CP850);
+    chunks.push(ESC_POS.ALIGN_LEFT);
+  }
   if (openDrawer) chunks.push(ESC_POS.OPEN_DRAWER);
   chunks.push(Buffer.from(text, "utf8"));
+  chunks.push(ESC_POS.FEED_3_LINES);
   chunks.push(fullCut ? ESC_POS.FULL_CUT : ESC_POS.PARTIAL_CUT);
   chunks.push(Buffer.from("\n", "utf8"));
 
@@ -197,7 +228,7 @@ async function resolvePrinterDestination(type, requestedPrinter) {
     return String(requestedPrinter).trim();
   }
 
-  const envDestination = type === "kitchen" ? PRINTER_58MM_NAME : PRINTER_80MM_NAME;
+  const envDestination = PRINTER_80MM_NAME;
   const status = await getPrintersStatus();
 
   if (!status.lpAvailable) {

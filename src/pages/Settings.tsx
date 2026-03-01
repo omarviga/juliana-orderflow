@@ -866,38 +866,11 @@ export default function SettingsPage() {
                   />
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label htmlFor="use-bluetooth" className="font-medium">
-                      Usar Bluetooth
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Obligatorio en esta instalación (ESC/POS).
-                    </p>
-                  </div>
-                  <Switch
-                    id="use-bluetooth"
-                    checked
-                    disabled
-                    aria-disabled="true"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label htmlFor="fallback" className="font-medium">
-                      Fallback a Navegador
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Deshabilitado: esta instalación usa solo ESC/POS por Bluetooth.
-                    </p>
-                  </div>
-                  <Switch
-                    id="fallback"
-                    checked={false}
-                    disabled
-                    aria-disabled="true"
-                  />
+                <div className="rounded-md border bg-muted/30 p-3">
+                  <p className="text-sm font-medium text-foreground">Modo impresión</p>
+                  <p className="text-xs text-muted-foreground">
+                    ESC/POS por Bluetooth únicamente. Fallback web/navegador deshabilitado.
+                  </p>
                 </div>
 
                 <div className="flex items-center justify-between">

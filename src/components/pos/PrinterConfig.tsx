@@ -20,7 +20,7 @@ import {
 import { Bluetooth, Printer, RefreshCw, TestTube, Trash2, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
-import { printToDevice } from "@/lib/printer-formats";
+import { generateClientTicketEscPos, printMultipleToDevice } from "@/lib/printer-formats";
 import type { PrinterDevice } from "@/types/printer";
 
 export function PrinterConfig() {
@@ -54,13 +54,6 @@ export function PrinterConfig() {
     });
   };
 
-  const handleToggleBluetooth = () => {
-    savePreferences({
-      ...preferences,
-      useBluetoothIfAvailable: !preferences.useBluetoothIfAvailable,
-    });
-  };
-
   const handleToggleOpenDrawer80mm = () => {
     savePreferences({
       ...preferences,
@@ -82,34 +75,28 @@ export function PrinterConfig() {
         return;
       }
 
-      const testHtml = `
-        <div style="text-align: center; font-family: monospace;">
-          <h3>PRUEBA DE IMPRESION</h3>
-          <hr />
-          <p><strong>Impresora:</strong> ${printer.name}</p>
-          <p><strong>Tipo:</strong> ${printer.type === "80mm" ? "Cliente (80mm)" : "Cocina (58mm)"}</p>
-          <p><strong>Fecha:</strong> ${new Date().toLocaleString()}</p>
-          <hr />
-          <p>Texto normal</p>
-          <p><strong>Texto en negrita</strong></p>
-          <p style="text-align: right;">Alineado derecha</p>
-          <hr />
-          <p>Prueba enviada</p>
-        </div>
-      `;
-
       const toastId = toast.loading(`Probando ${printer.name}...`);
 
       try {
-        if (preferences.useBluetoothIfAvailable) {
-          await printToDevice(printer.address, testHtml, printer.type, {
-            openDrawer: printer.type === "80mm" ? preferences.openDrawerOn80mm : false,
+        const escPosCommands = generateClientTicketEscPos(
+          [],
+          0,
+          9999,
+          "PRUEBA",
+          new Date().toLocaleString("es-MX"),
+          "Efectivo",
+          {
+            openDrawer: false,
             fullCut: true,
-          });
-          toast.success(`Prueba enviada a ${printer.name}`, { id: toastId });
-          return;
-        }
-        throw new Error("Impresión Bluetooth ESC/POS desactivada.");
+          }
+        );
+        await printMultipleToDevice(printer.address, [
+          {
+            escPosCommands,
+            printerSize: "80mm",
+          },
+        ]);
+        toast.success(`Prueba enviada a ${printer.name}`, { id: toastId });
       } catch (error) {
         console.error("Error en prueba:", error);
         toast.error(
@@ -118,7 +105,7 @@ export function PrinterConfig() {
         );
       }
     },
-    [preferences]
+    []
   );
 
   return (
@@ -189,7 +176,7 @@ export function PrinterConfig() {
                     <span className="font-medium">{printer.name}</span>
                     {printer.type && (
                       <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs">
-                        {printer.type === "80mm" ? "Cliente" : "Cocina"}
+                        80mm
                       </span>
                     )}
                   </div>
@@ -202,7 +189,7 @@ export function PrinterConfig() {
                         try {
                           assignPrinterType(
                             printer.address,
-                            value === "none" ? null : (value as "80mm" | "58mm")
+                            value === "none" ? null : (value as "80mm")
                           );
                         } catch (error) {
                           console.error("Error asignando impresora:", error);
@@ -214,8 +201,7 @@ export function PrinterConfig() {
                         <SelectValue placeholder="Asignar como..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="80mm">Cliente (80mm)</SelectItem>
-                        <SelectItem value="58mm">Cocina (58mm)</SelectItem>
+                        <SelectItem value="80mm">Impresora 80mm</SelectItem>
                         <SelectItem value="none">Sin asignar</SelectItem>
                       </SelectContent>
                     </Select>
@@ -257,7 +243,7 @@ export function PrinterConfig() {
                 )}
                 {kitchenPrinter && (
                   <div className="flex items-center justify-between">
-                    <span>Cocina (58mm):</span>
+                    <span>Cocina (80mm):</span>
                     <span className="font-mono text-xs">{kitchenPrinter.name}</span>
                   </div>
                 )}
@@ -279,24 +265,9 @@ export function PrinterConfig() {
               />
             </div>
 
-            <div className="flex items-center justify-between">
-              <Label htmlFor="use-bluetooth" className="font-medium">
-                Usar Bluetooth
-              </Label>
-              <Switch
-                id="use-bluetooth"
-                checked
-                disabled
-                aria-disabled="true"
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <Label htmlFor="fallback" className="font-medium">
-                Fallback a navegador
-              </Label>
-              <Switch id="fallback" checked={false} disabled aria-disabled="true" />
-            </div>
+            <p className="text-xs text-muted-foreground">
+              Modo estricto: solo impresión ESC/POS por Bluetooth en 80mm.
+            </p>
 
             {clientPrinter && (
               <>
