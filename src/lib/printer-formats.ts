@@ -1,6 +1,7 @@
 // printer-format.ts - VERSIÓN COMPLETA Y CORREGIDA CON TODOS LOS COMANDOS ESC/POS
 
 import type { CartItem } from "@/types/pos";
+import { getDisplayProductName } from "@/lib/product-name";
 
 // ============================================
 // CONFIGURACIÓN BÁSICA
@@ -15,21 +16,9 @@ const PRINTER_CONFIGS: Record<string, PrinterConfig> = {
   "58mm": { charsPerLine: 32 },
 };
 
-const STANDALONE_EXTRA_PRODUCT_NAMES = new Set([
-  "EXTRA SUELTO",
-  "EXTRAS SUELTOS",
-  "EXTRA INDEPENDIENTE",
-]);
-
 // ============================================
 // UTILIDADES
 // ============================================
-
-const normalizeText = (value: string) =>
-  value.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
-const getDisplayProductName = (name: string) =>
-  STANDALONE_EXTRA_PRODUCT_NAMES.has(normalizeText(name)) ? "Extra" : name;
 
 function escapeHtml(value: string): string {
   return value
@@ -461,21 +450,6 @@ export async function printClientTicketEscPos(
     drawerNumber?: 1 | 2;
   }
 ): Promise<boolean> {
-  const html = generateClientTicketHTML(
-    items,
-    total,
-    orderNumber,
-    customerName,
-    dateStr,
-    paymentMethodLabel
-  );
-  const htmlOk = await printHtmlToEscPosApp(html, {
-    feedLines: 3,
-    autoCut: "full",
-    openDrawer: options?.openDrawer,
-  });
-  if (htmlOk) return true;
-
   const commands = generateClientTicketEscPos(
     items, total, orderNumber, customerName, dateStr, paymentMethodLabel,
     { openDrawer: options?.openDrawer, fullCut: true, drawerNumber: options?.drawerNumber }
@@ -496,14 +470,6 @@ export async function printKitchenOrderEscPos(
   customerName: string,
   dateStr: string
 ): Promise<boolean> {
-  const html = generateKitchenOrderHTML(items, orderNumber, customerName, dateStr);
-  const htmlOk = await printHtmlToEscPosApp(html, {
-    feedLines: 2,
-    autoCut: "partial",
-    openDrawer: false,
-  });
-  if (htmlOk) return true;
-
   const commands = generateKitchenOrderEscPos(items, orderNumber, customerName, dateStr);
   return printToEscPosApp(macAddress, commands, {
     feedLines: 2,
@@ -525,23 +491,6 @@ export async function printBothEscPos(
     drawerNumber?: 1 | 2;
   }
 ): Promise<boolean> {
-  const kitchenHtml = generateKitchenOrderHTML(items, orderNumber, customerName, dateStr);
-  const clientHtml = generateClientTicketHTML(
-    items,
-    total,
-    orderNumber,
-    customerName,
-    dateStr,
-    paymentMethodLabel
-  );
-  const combinedHtml = `${kitchenHtml}<div style="page-break-after: always;"></div>${clientHtml}`;
-  const htmlOk = await printHtmlToEscPosApp(combinedHtml, {
-    feedLines: 3,
-    autoCut: "full",
-    openDrawer: options?.openDrawer,
-  });
-  if (htmlOk) return true;
-
   const commands = generateBothEscPos(
     items, total, orderNumber, customerName, dateStr, paymentMethodLabel,
     { openDrawer: options?.openDrawer, drawerNumber: options?.drawerNumber }

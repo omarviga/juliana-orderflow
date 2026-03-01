@@ -24,22 +24,7 @@ import {
   type OfflineOrderPayload,
 } from "@/lib/offline-orders";
 import { formatCurrencyMXN } from "@/lib/currency";
-
-const STANDALONE_EXTRA_PRODUCT_NAMES = new Set([
-  "EXTRA SUELTO",
-  "EXTRAS SUELTOS",
-  "EXTRA INDEPENDIENTE",
-]);
-
-const normalizeText = (value: string) =>
-  value
-    .trim()
-    .toUpperCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-
-const getDisplayProductName = (name: string) =>
-  STANDALONE_EXTRA_PRODUCT_NAMES.has(normalizeText(name)) ? "Extra" : name;
+import { getDisplayProductName } from "@/lib/product-name";
 
 interface Props {
   open: boolean;
