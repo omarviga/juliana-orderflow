@@ -6,12 +6,10 @@ import type { CartItem } from "@/types/pos";
 import type { CashRegisterSale } from "@/lib/cash-register";
 import type { CashCutCountSummary, CashCutDetails } from "@/lib/printer-formats";
 import {
-  printClientTicketEscPos,
-  printKitchenOrderEscPos,
+  printClientTicket,
+  printKitchenOrder,
   isEscPosAppAvailable,
-  printToDevice,
 } from "@/lib/printer-formats";
-
 // ============================================
 // TIPOS
 // ============================================
