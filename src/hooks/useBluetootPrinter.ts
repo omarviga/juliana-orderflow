@@ -128,6 +128,11 @@ export function useBluetootPrinter() {
     };
   }, [printQueue, isPrinting]);
 
+  const getClientPrinter = useCallback((): PrinterDevice | null => {
+    if (!preferences.clientPrinterId) return null;
+    return preferences.printers[preferences.clientPrinterId] || AUTO_PRINTER;
+  }, [preferences.clientPrinterId, preferences.printers]);
+
   useEffect(() => {
     const printerAddress = getClientPrinter()?.address;
     if (!printerAddress) return;
@@ -147,11 +152,6 @@ export function useBluetootPrinter() {
       document.removeEventListener("visibilitychange", runKeepAlive);
     };
   }, [getClientPrinter, preferences.clientPrinterId]);
-
-  const getClientPrinter = useCallback((): PrinterDevice | null => {
-    if (!preferences.clientPrinterId) return null;
-    return preferences.printers[preferences.clientPrinterId] || AUTO_PRINTER;
-  }, [preferences.clientPrinterId, preferences.printers]);
 
   const selectClientPrinter = useCallback(async (): Promise<PrinterDevice> => {
     if (typeof navigator === "undefined" || !navigator.bluetooth?.requestDevice) {
