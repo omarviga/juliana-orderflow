@@ -8,7 +8,6 @@ import type { CashCutCountSummary, CashCutDetails } from "@/lib/printer-formats"
 import {
   printClientTicketEscPos,
   printKitchenOrderEscPos,
-  printBothEscPos,
   isEscPosAppAvailable,
   printToDevice,
 } from "@/lib/printer-formats";
@@ -56,6 +55,18 @@ const DEFAULT_PREFERENCES: PrinterPreferences = {
   openDrawerOn80mm: true,
   fullCutOn80mm: true,
 };
+
+const normalizePaymentLabel = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+const shouldOpenDrawerForPayment = (
+  paymentMethodLabel: string,
+  enabledInSettings: boolean
+) => enabledInSettings && normalizePaymentLabel(paymentMethodLabel) === "efectivo";
 
 // ============================================
 // HOOK PRINCIPAL
@@ -198,6 +209,10 @@ export function useBluetootPrinter() {
         if (!isEscPosAppAvailable()) {
           throw new Error("ESC/POS PrintService no disponible");
         }
+        const openDrawer = shouldOpenDrawerForPayment(
+          paymentMethodLabel,
+          preferences.openDrawerOn80mm
+        );
 
         const success = await printClientTicketEscPos(
           macAddress,
@@ -208,7 +223,7 @@ export function useBluetootPrinter() {
           dateStr,
           paymentMethodLabel,
           {
-            openDrawer: preferences.openDrawerOn80mm,
+            openDrawer,
             fullCut: preferences.fullCutOn80mm,
             drawerNumber: 2 // Usando cajón 2 como configuraste
           }
@@ -278,8 +293,24 @@ export function useBluetootPrinter() {
         if (!isEscPosAppAvailable()) {
           throw new Error("ESC/POS PrintService no disponible");
         }
+        const openDrawer = shouldOpenDrawerForPayment(
+          paymentMethodLabel,
+          preferences.openDrawerOn80mm
+        );
 
-        const success = await printBothEscPos(
+        const kitchenSuccess = await printKitchenOrderEscPos(
+          macAddress,
+          items,
+          orderNumber,
+          customerName,
+          dateStr
+        );
+
+        if (!kitchenSuccess) {
+          throw new Error("Error al imprimir comanda");
+        }
+
+        const clientSuccess = await printClientTicketEscPos(
           macAddress,
           items,
           total,
@@ -288,17 +319,16 @@ export function useBluetootPrinter() {
           dateStr,
           paymentMethodLabel,
           {
-            openDrawer: preferences.openDrawerOn80mm,
-            fullCut: preferences.fullCutOn80mm,
+            openDrawer,
             drawerNumber: 2
           }
         );
 
-        if (success) {
-          toast.success("Comanda y ticket enviados");
-        } else {
-          throw new Error("Error al imprimir");
+        if (!clientSuccess) {
+          throw new Error("Error al imprimir ticket");
         }
+
+        toast.success("Comanda y ticket enviados");
       } catch (error) {
         console.error("Error imprimiendo ambos:", error);
         toast.error("Error al imprimir");

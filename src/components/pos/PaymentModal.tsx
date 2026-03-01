@@ -70,9 +70,12 @@ export function PaymentModal({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const isCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
-    setIsTouchDevice(isCoarsePointer);
-    if (isCoarsePointer) {
+    const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+    const touchPoints = typeof navigator !== "undefined" ? navigator.maxTouchPoints > 0 : false;
+    const touchApi = "ontouchstart" in window;
+    const touchDevice = coarsePointer || touchPoints || touchApi;
+    setIsTouchDevice(touchDevice);
+    if (touchDevice) {
       setAllowManualNameInput(true);
     }
   }, []);
@@ -274,7 +277,8 @@ export function PaymentModal({
     setSavedOrderNumber(null);
     setCustomerName("");
     setPaymentMethod("efectivo");
-    setAllowManualNameInput(false);
+    // En touch debe permanecer habilitado al reabrir el modal.
+    setAllowManualNameInput(isTouchDevice);
     blurActiveElement();
     onClose();
   };
