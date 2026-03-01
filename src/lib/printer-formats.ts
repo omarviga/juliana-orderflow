@@ -605,6 +605,84 @@ export async function printToDevice(
   throw new Error("Modo ESC/POS estricto: printToDevice(html) deshabilitado");
 }
 
+const PRINTER_BT_SERVICE_UUID = "00001101-0000-1000-8000-00805f9b34fb";
+const PRINTER_BT_FALLBACK_CHAR_UUID = "2a19";
+
+type ActiveBluetoothSession = {
+  deviceAddress: string;
+  device: BluetoothDevice;
+  characteristic: BluetoothRemoteGATTCharacteristic;
+};
+
+let activeBluetoothSession: ActiveBluetoothSession | null = null;
+
+function clearActiveBluetoothSession(): void {
+  activeBluetoothSession = null;
+}
+
+async function resolveBluetoothDevice(deviceAddress: string): Promise<BluetoothDevice> {
+  const getDevices = navigator.bluetooth.getDevices?.bind(navigator.bluetooth);
+  if (getDevices) {
+    const pairedDevices = await getDevices();
+    const known = pairedDevices.find((device) => device.id === deviceAddress);
+    if (known) return known;
+  }
+
+  return navigator.bluetooth.requestDevice({
+    filters: [{ services: [PRINTER_BT_SERVICE_UUID] }],
+    optionalServices: [PRINTER_BT_SERVICE_UUID, "0000180a-0000-1000-8000-00805f9b34fb"],
+    acceptAllDevices: false,
+  });
+}
+
+async function resolveWritableCharacteristic(
+  deviceAddress: string
+): Promise<BluetoothRemoteGATTCharacteristic> {
+  if (
+    activeBluetoothSession &&
+    activeBluetoothSession.deviceAddress === deviceAddress &&
+    activeBluetoothSession.device.gatt?.connected
+  ) {
+    return activeBluetoothSession.characteristic;
+  }
+
+  const device = await resolveBluetoothDevice(deviceAddress);
+  const server = device.gatt?.connected ? device.gatt : await device.gatt?.connect();
+  if (!server) {
+    throw new Error("No se pudo conectar a GATT server");
+  }
+
+  const service = await server.getPrimaryService(PRINTER_BT_SERVICE_UUID);
+  let characteristic: BluetoothRemoteGATTCharacteristic;
+  try {
+    characteristic = await service.getCharacteristic(PRINTER_BT_FALLBACK_CHAR_UUID);
+  } catch {
+    const characteristics = await service.getCharacteristics();
+    const writable = characteristics.find((c) => c.properties.write || c.properties.writeWithoutResponse);
+    if (!writable) {
+      throw new Error("No se encontró característica escribible");
+    }
+    characteristic = writable;
+  }
+
+  const handleDisconnected = () => {
+    if (activeBluetoothSession?.device.id === device.id) {
+      clearActiveBluetoothSession();
+    }
+  };
+
+  device.removeEventListener("gattserverdisconnected", handleDisconnected);
+  device.addEventListener("gattserverdisconnected", handleDisconnected);
+
+  activeBluetoothSession = {
+    deviceAddress,
+    device,
+    characteristic,
+  };
+
+  return characteristic;
+}
+
 export async function printMultipleToDevice(
   deviceAddress: string,
   jobs: Array<{
@@ -626,60 +704,7 @@ export async function printMultipleToDevice(
   }
 
   try {
-    let device;
-
-    // Intenta obtener el dispositivo por su dirección si has sido emparejado antes
-    try {
-      const pairedDevices = await navigator.bluetooth.getAvailability?.();
-      if (pairedDevices) {
-        // Android - intenta usar dispositivo por su dirección/ID
-        device = await navigator.bluetooth.requestDevice({
-          filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }], // Bluetooth Serial Port Profile
-          acceptAllDevices: false,
-        });
-      }
-    } catch (e) {
-      // No se pudo obtener por dirección, solicita al usuario
-      device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: ["00001101-0000-1000-8000-00805f9b34fb"] }],
-        optionalServices: ["00001101-0000-1000-8000-00805f9b34fb", "0000180a-0000-1000-8000-00805f9b34fb"], // Device Information
-        acceptAllDevices: false,
-      });
-    }
-
-    if (!device) {
-      throw new Error("No se seleccionó dispositivo");
-    }
-
-    console.log("Dispositivo Bluetooth seleccionado:", device.name, device.id);
-
-    // Conectar a GATT
-    const server = await device.gatt?.connect();
-    if (!server) {
-      throw new Error("No se pudo conectar a GATT server");
-    }
-
-    console.log("Conectado a GATT server");
-
-    // Obtener servicio Serial Port Profile (UUID estándar para impresoras)
-    const service = await server.getPrimaryService("00001101-0000-1000-8000-00805f9b34fb");
-
-    // Obtener característica de escritura (hay diferentes en diferentes impresoras)
-    let characteristic;
-    try {
-      // Intenta obtener la característica estándar
-      characteristic = await service.getCharacteristic("2a19");
-    } catch {
-      // Si no existe, obtén cualquier característica escribible
-      const characteristics = await service.getCharacteristics();
-      characteristic = characteristics.find(
-        (c) => c.properties.write || c.properties.writeWithoutResponse
-      );
-
-      if (!characteristic) {
-        throw new Error("No se encontró característica escribible");
-      }
-    }
+    const characteristic = await resolveWritableCharacteristic(deviceAddress);
 
     // Convertir todos los HTML a datos imprimibles en un solo trabajo.
     const printData = jobs.flatMap((job) => {
@@ -711,14 +736,8 @@ export async function printMultipleToDevice(
     }
 
     console.log("Datos enviados exitosamente");
-
-    // Esperar un poco antes de desconectar
-    await new Promise((resolve) => setTimeout(resolve, 200));
-
-    // Desconectar
-    device.gatt?.disconnect();
-    console.log("Desconectado de la impresora");
   } catch (error) {
+    clearActiveBluetoothSession();
     console.error("Error de impresión:", error);
     throw error;
   }

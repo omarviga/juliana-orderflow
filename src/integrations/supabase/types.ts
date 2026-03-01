@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      cash_register_sessions: {
+        Row: {
+          closed_at: string | null
+          closing_amount: number | null
+          closing_denominations: Json | null
+          created_at: string
+          difference: number | null
+          expected_amount: number | null
+          id: string
+          notes: string | null
+          opened_at: string
+          opening_amount: number
+          opening_denominations: Json | null
+          status: string
+        }
+        Insert: {
+          closed_at?: string | null
+          closing_amount?: number | null
+          closing_denominations?: Json | null
+          created_at?: string
+          difference?: number | null
+          expected_amount?: number | null
+          id?: string
+          notes?: string | null
+          opened_at?: string
+          opening_amount?: number
+          opening_denominations?: Json | null
+          status?: string
+        }
+        Update: {
+          closed_at?: string | null
+          closing_amount?: number | null
+          closing_denominations?: Json | null
+          created_at?: string
+          difference?: number | null
+          expected_amount?: number | null
+          id?: string
+          notes?: string | null
+          opened_at?: string
+          opening_amount?: number
+          opening_denominations?: Json | null
+          status?: string
+        }
+        Relationships: []
+      }
       categories: {
         Row: {
           created_at: string
@@ -103,6 +148,7 @@ export type Database = {
           created_at: string
           custom_label: string | null
           id: string
+          kitchen_note: string | null
           order_id: string
           product_id: string
           product_size_id: string | null
@@ -114,6 +160,7 @@ export type Database = {
           created_at?: string
           custom_label?: string | null
           id?: string
+          kitchen_note?: string | null
           order_id: string
           product_id: string
           product_size_id?: string | null
@@ -125,6 +172,7 @@ export type Database = {
           created_at?: string
           custom_label?: string | null
           id?: string
+          kitchen_note?: string | null
           order_id?: string
           product_id?: string
           product_size_id?: string | null
@@ -159,7 +207,7 @@ export type Database = {
       orders: {
         Row: {
           created_at: string
-          customer_name: string
+          customer_name: string | null
           id: string
           order_number: number
           status: string
@@ -167,7 +215,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          customer_name: string
+          customer_name?: string | null
           id?: string
           order_number?: number
           status?: string
@@ -175,7 +223,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          customer_name?: string
+          customer_name?: string | null
           id?: string
           order_number?: number
           status?: string

@@ -158,6 +158,7 @@ export function PaymentModal({
       unitPrice: item.unitPrice,
       subtotal: item.subtotal,
       customLabel: item.customLabel || null,
+      kitchenNote: item.kitchenNote || null,
       customizationIngredientIds: (item.customizations || []).map((c) => c.ingredient.id),
     })),
   });
@@ -193,6 +194,7 @@ export function PaymentModal({
             unit_price: item.unitPrice,
             subtotal: item.subtotal,
             custom_label: item.customLabel || null,
+            kitchen_note: item.kitchenNote || null,
           })
           .select()
           .single();

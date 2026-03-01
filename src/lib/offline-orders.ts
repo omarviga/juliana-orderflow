@@ -11,6 +11,7 @@ export interface OfflineOrderItem {
   unitPrice: number;
   subtotal: number;
   customLabel: string | null;
+  kitchenNote: string | null;
   customizationIngredientIds: string[];
 }
 
@@ -103,6 +104,7 @@ async function persistOrder(
           unit_price: item.unitPrice,
           subtotal: item.subtotal,
           custom_label: item.customLabel,
+          kitchen_note: item.kitchenNote,
         })
         .select()
         .single();
