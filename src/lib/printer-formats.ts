@@ -925,54 +925,93 @@ export function generateClientTicketEscPos(
   options?: { openDrawer?: boolean; fullCut?: boolean }
 ): number[] {
   const config = PRINTER_CONFIGS["80mm"];
-  const separator = "-".repeat(config.charsPerLine) + "\n";
+  const fullSeparator = "=".repeat(config.charsPerLine);
+  const lightSeparator = "-".repeat(config.charsPerLine);
+  const money = (value: number) => `$${value.toFixed(0)}`;
+  const padRightAmount = (left: string, right: string) => {
+    if (left.length + right.length + 1 > config.charsPerLine) {
+      return `${left} ${right}`;
+    }
+    return `${left}${" ".repeat(config.charsPerLine - left.length - right.length)}${right}`;
+  };
+  const wrapLine = (value: string, width: number) => {
+    const words = value.trim().split(/\s+/);
+    const lines: string[] = [];
+    let current = "";
+    words.forEach((word) => {
+      const next = current ? `${current} ${word}` : word;
+      if (next.length <= width) {
+        current = next;
+      } else {
+        if (current) lines.push(current);
+        current = word;
+      }
+    });
+    if (current) lines.push(current);
+    return lines.length > 0 ? lines : [value];
+  };
 
   const commands = [
     ...RESET,
     ...CODE_PAGE_CP850,
     ...LEFT,
     ...CENTER,
+    ...encode(fullSeparator),
     ...FONT_LARGE,
     ...BOLD_ON,
     ...encode("JULIANA"),
     ...BOLD_OFF,
     ...FONT_NORMAL,
+    ...encode("-----"),
     ...encode("BARRA COTIDIANA"),
-    ...encode("AV. MIGUEL HIDALGO #276"),
-    ...encode("Tel: 417 206 0111"),
-    ...encode(separator),
+    ...encode("AV. MIGUEL HIDALGO #276, COL CENTRO,"),
+    ...encode("ACAMBARO GTO."),
+    ...encode("Tel. 417 206 9111"),
+    ...encode(fullSeparator),
     ...LEFT,
+    ...encode(lightSeparator),
     ...BOLD_ON,
-    ...encode(`Pedido: #${orderNumber || "---"}`),
-    ...encode(`Nombre: ${customerName}`),
+    ...encode("DETALLE DEL PEDIDO"),
     ...BOLD_OFF,
-    ...encode(dateStr),
-    ...encode(`Pago: ${paymentMethodLabel}`),
-    ...encode(separator),
+    ...encode(lightSeparator),
+    ...encode(padRightAmount("Pedido", `#${orderNumber || "---"}`)),
+    ...encode(padRightAmount("Cliente", customerName || "Barra")),
+    ...encode(padRightAmount("Fecha", dateStr)),
+    ...encode(padRightAmount("Pago", paymentMethodLabel)),
+    ...encode(lightSeparator),
+    ...BOLD_ON,
+    ...encode("CONSUMO"),
+    ...BOLD_OFF,
+    ...encode(lightSeparator),
   ];
 
   items.forEach((item) => {
-    const itemLine = `${item.quantity}x ${getDisplayProductName(item.product.name)}${item.productSize ? ` (${item.productSize.name})` : ""}`;
-    const priceLine = `$${item.subtotal.toFixed(0)}`;
-    const spaces = Math.max(1, config.charsPerLine - itemLine.length - priceLine.length);
-    const line = itemLine + " ".repeat(spaces) + priceLine;
-    commands.push(...encode(line));
+    const itemTitle = `${item.quantity}x ${getDisplayProductName(item.product.name)}${item.productSize ? ` (${item.productSize.name})` : ""}`;
+    const priceLine = money(item.subtotal);
+    const itemLines = wrapLine(itemTitle, config.charsPerLine - priceLine.length - 1);
 
-    if (item.customLabel) {
-      commands.push(...encode(`  • ${item.customLabel}`));
-    }
-    if (item.kitchenNote) {
-      commands.push(...encode(`  • Nota: ${item.kitchenNote}`));
-    }
+    commands.push(...encode(padRightAmount(itemLines[0], priceLine)));
+    itemLines.slice(1).forEach((line) => commands.push(...encode(line)));
+
+    const detailLines: string[] = [];
+    if (item.customLabel) detailLines.push(item.customLabel);
+    if (item.kitchenNote) detailLines.push(`Nota: ${item.kitchenNote}`);
+    if (detailLines.length === 0) detailLines.push("Sin extras");
+    detailLines.forEach((detail) => {
+      wrapLine(`  - ${detail}`, config.charsPerLine).forEach((line) => commands.push(...encode(line)));
+    });
   });
 
-  commands.push(...encode(separator));
-  commands.push(...CENTER, ...FONT_LARGE, ...BOLD_ON);
-  commands.push(...encode(`TOTAL: $${total.toFixed(0)}`));
+  commands.push(...encode(fullSeparator));
+  commands.push(...LEFT, ...FONT_LARGE, ...BOLD_ON);
+  commands.push(...encode(padRightAmount("TOTAL", money(total))));
   commands.push(...BOLD_OFF, ...FONT_NORMAL);
-  commands.push(...encode(separator));
-  commands.push(...encode("¡Gracias por tu visita!"));
-  commands.push(...encode("Vuelve pronto"));
+  commands.push(...encode(fullSeparator));
+  commands.push(...CENTER);
+  commands.push(...encode("GRACIAS POR TU VISITA"));
+  commands.push(...encode(lightSeparator));
+  commands.push(...encode("TE ESPERAMOS PRONTO"));
+  commands.push(...encode(lightSeparator));
   commands.push(...FEED_3_LINES);
 
   if (options?.openDrawer) commands.push(...OPEN_DRAWER);
