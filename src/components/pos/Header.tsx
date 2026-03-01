@@ -32,6 +32,10 @@ export function Header() {
   };
 
   const handleNavigate = (path: string) => {
+    if (typeof window !== "undefined") {
+      window.location.assign(path);
+      return;
+    }
     navigate(path);
     setMobileMenuOpen(false);
   };

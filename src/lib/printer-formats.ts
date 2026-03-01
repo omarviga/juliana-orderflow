@@ -607,6 +607,7 @@ export async function printToDevice(
 
 const PRINTER_BT_SERVICE_UUID = "00001101-0000-1000-8000-00805f9b34fb";
 const FIXED_PRINTER_NAME = "glprinter";
+const AUTO_PRINTER_ADDRESS = "AUTO_PRINTER";
 const KNOWN_PRINTER_SERVICE_UUIDS = [
   PRINTER_BT_SERVICE_UUID,
   "0000ffe0-0000-1000-8000-00805f9b34fb",
@@ -638,7 +639,11 @@ function clearActiveBluetoothSession(): void {
   activeBluetoothSession = null;
 }
 
-async function resolveBluetoothDevice(deviceAddress: string): Promise<BluetoothDevice> {
+async function resolveBluetoothDevice(
+  deviceAddress: string,
+  options?: { allowPrompt?: boolean }
+): Promise<BluetoothDevice> {
+  const allowPrompt = options?.allowPrompt !== false;
   const getDevices = navigator.bluetooth.getDevices?.bind(navigator.bluetooth);
   if (getDevices) {
     const pairedDevices = await getDevices();
@@ -648,6 +653,13 @@ async function resolveBluetoothDevice(deviceAddress: string): Promise<BluetoothD
       (device.name || "").toLowerCase().includes(FIXED_PRINTER_NAME)
     );
     if (glPrinter) return glPrinter;
+    if (deviceAddress === AUTO_PRINTER_ADDRESS && pairedDevices.length > 0) {
+      return pairedDevices[0];
+    }
+  }
+
+  if (!allowPrompt) {
+    throw new Error("No hay impresora vinculada para reconexión silenciosa.");
   }
 
   try {
@@ -664,13 +676,19 @@ async function resolveBluetoothDevice(deviceAddress: string): Promise<BluetoothD
 }
 
 async function resolveWritableCharacteristic(
-  deviceAddress: string
+  deviceAddress: string,
+  options?: { allowPrompt?: boolean }
 ): Promise<BluetoothRemoteGATTCharacteristic> {
-  // Forzar resolución fresca por trabajo para evitar sesiones BLE "zombie"
-  // que se quedan conectadas pero dejan de aceptar datos tras el primer ticket.
-  clearActiveBluetoothSession();
+  // Reusar sesión activa para evitar prompts de sincronización en cada impresión.
+  if (
+    activeBluetoothSession &&
+    activeBluetoothSession.device.gatt?.connected &&
+    (activeBluetoothSession.deviceAddress === deviceAddress || deviceAddress === AUTO_PRINTER_ADDRESS)
+  ) {
+    return activeBluetoothSession.characteristic;
+  }
 
-  const device = await resolveBluetoothDevice(deviceAddress);
+  const device = await resolveBluetoothDevice(deviceAddress, options);
   const server = device.gatt?.connected ? device.gatt : await device.gatt?.connect();
   if (!server) {
     throw new Error("No se pudo conectar a GATT server");
@@ -751,6 +769,16 @@ async function resolveWritableCharacteristic(
   return characteristic;
 }
 
+export async function keepBluetoothPrinterAlive(deviceAddress: string): Promise<void> {
+  if (typeof navigator === "undefined" || !navigator.bluetooth) return;
+
+  try {
+    await resolveWritableCharacteristic(deviceAddress, { allowPrompt: false });
+  } catch {
+    // Silencioso: el flujo de impresión normal intentará reconectar con prompt si hace falta.
+  }
+}
+
 export async function printMultipleToDevice(
   deviceAddress: string,
   jobs: Array<{
@@ -804,7 +832,6 @@ export async function printMultipleToDevice(
       }
 
       console.log("Datos enviados exitosamente");
-      clearActiveBluetoothSession();
       return;
     } catch (error) {
       clearActiveBluetoothSession();
@@ -925,26 +952,14 @@ export function generateClientTicketEscPos(
   options?: { openDrawer?: boolean; fullCut?: boolean }
 ): number[] {
   const config = PRINTER_CONFIGS["80mm"];
-  const strongSeparator = "_".repeat(config.charsPerLine);
+  const safeCustomerName = (customerName || "").trim() || "Barra";
+  const separator = "=".repeat(config.charsPerLine);
   const money = (value: number) => `$${value.toFixed(0)}`;
   const padRightAmount = (left: string, right: string) => {
     if (left.length + right.length + 1 > config.charsPerLine) {
       return `${left} ${right}`;
     }
     return `${left}${" ".repeat(config.charsPerLine - left.length - right.length)}${right}`;
-  };
-  const boxTop = "+" + "-".repeat(Math.max(0, config.charsPerLine - 2)) + "+";
-  const boxBottom = boxTop;
-  const boxLine = (text: string = "") => {
-    const contentWidth = Math.max(0, config.charsPerLine - 4);
-    const normalized = text.slice(0, contentWidth);
-    return `| ${normalized}${" ".repeat(Math.max(0, contentWidth - normalized.length))} |`;
-  };
-  const boxLineAmount = (left: string, right: string) => {
-    const contentWidth = Math.max(0, config.charsPerLine - 4);
-    const line = padRightAmount(left, right);
-    const normalized = line.slice(0, contentWidth);
-    return `| ${normalized}${" ".repeat(Math.max(0, contentWidth - normalized.length))} |`;
   };
   const wrapLine = (value: string, width: number) => {
     const words = value.trim().split(/\s+/);
@@ -978,21 +993,21 @@ export function generateClientTicketEscPos(
     ...encode("AV. MIGUEL HIDALGO #276, COL CENTRO,"),
     ...encode("ACAMBARO GTO."),
     ...encode("Tel. 417 206 9111"),
-    ...encode(strongSeparator),
+    ...encode(separator),
     ...LEFT,
     ...BOLD_ON,
     ...encode("DETALLE DEL PEDIDO"),
     ...BOLD_OFF,
-    ...encode(boxTop),
-    ...encode(boxLineAmount("Pedido", `#${orderNumber || "---"}`)),
-    ...encode(boxLineAmount("Cliente", customerName || "Barra")),
-    ...encode(boxLineAmount("Fecha", dateStr)),
-    ...encode(boxLineAmount("Pago", paymentMethodLabel)),
-    ...encode(boxBottom),
+    ...encode(padRightAmount("Pedido", `#${orderNumber || "---"}`)),
+    ...encode(padRightAmount("Cliente", safeCustomerName)),
+    ...wrapLine(safeCustomerName, config.charsPerLine - 2).slice(1).flatMap((line) => encode(`  ${line}`)),
+    ...encode(padRightAmount("Fecha", dateStr)),
+    ...wrapLine(`Pago ${paymentMethodLabel}`, config.charsPerLine).flatMap((line) => encode(line)),
+    ...encode(separator),
     ...BOLD_ON,
     ...encode("CONSUMO"),
     ...BOLD_OFF,
-    ...encode(boxTop),
+    ...encode(separator),
   ];
 
   items.forEach((item) => {
@@ -1000,30 +1015,28 @@ export function generateClientTicketEscPos(
     const priceLine = money(item.subtotal);
     const itemLines = wrapLine(itemTitle, config.charsPerLine - priceLine.length - 1);
 
-    commands.push(...encode(boxLineAmount(itemLines[0], priceLine)));
-    itemLines.slice(1).forEach((line) => commands.push(...encode(boxLine(line))));
+    commands.push(...encode(padRightAmount(itemLines[0], priceLine)));
+    itemLines.slice(1).forEach((line) => commands.push(...encode(line)));
 
     const detailLines: string[] = [];
     if (item.customLabel) detailLines.push(item.customLabel);
     if (item.kitchenNote) detailLines.push(`Nota: ${item.kitchenNote}`);
     if (detailLines.length === 0) detailLines.push("Sin extras");
     detailLines.forEach((detail) => {
-      wrapLine(`  - ${detail}`, config.charsPerLine - 4).forEach((line) => commands.push(...encode(boxLine(line))));
+      wrapLine(`  - ${detail}`, config.charsPerLine).forEach((line) => commands.push(...encode(line)));
     });
   });
 
-  commands.push(...encode(boxBottom));
+  commands.push(...encode(separator));
   commands.push(...LEFT, ...FONT_LARGE, ...BOLD_ON);
-  commands.push(...encode(boxTop));
-  commands.push(...encode(boxLineAmount("TOTAL", money(total))));
-  commands.push(...encode(boxBottom));
+  commands.push(...encode(padRightAmount("TOTAL", money(total))));
   commands.push(...BOLD_OFF, ...FONT_NORMAL);
   commands.push(...CENTER);
-  commands.push(...encode(strongSeparator));
+  commands.push(...encode(separator));
   commands.push(...encode("GRACIAS POR VISITARNOS"));
-  commands.push(...encode(strongSeparator));
+  commands.push(...encode(separator));
   commands.push(...encode("TE ESPERAMOS PRONTO"));
-  commands.push(...encode(strongSeparator));
+  commands.push(...encode(separator));
   commands.push(...FEED_3_LINES);
 
   if (options?.openDrawer) commands.push(...OPEN_DRAWER);
