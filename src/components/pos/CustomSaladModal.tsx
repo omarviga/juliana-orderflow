@@ -59,8 +59,9 @@ export function CustomSaladModal({
   const aderezos = ingredients.filter((i) => i.type === "aderezo");
 
   const calculatedPrice = useMemo(() => {
-    if (!config) return 0;
-    let price = config.basePrice;
+    if (!config || !selectedSize) return 0;
+    // Use live DB size price as base to avoid desync with hardcoded defaults.
+    let price = selectedSize.price;
 
     // Proteins
     const selProteins = proteins.filter((p) => selectedProteins.includes(p.id));
@@ -99,7 +100,16 @@ export function CustomSaladModal({
     }
 
     return price;
-  }, [config, selectedProteins, selectedToppings, selectedCrocantes, selectedAderezos, proteins, toppings]);
+  }, [
+    config,
+    selectedSize,
+    selectedProteins,
+    selectedToppings,
+    selectedCrocantes,
+    selectedAderezos,
+    proteins,
+    toppings,
+  ]);
 
   const reset = () => {
     setStep(0);
@@ -158,6 +168,7 @@ export function CustomSaladModal({
         cost = isPremium ? 15 : 10;
       }
       allSelected.push({ ingredient: t, extraCost: cost });
+      buildLabel.push(t.name);
     }
 
     selectedCrocantes.forEach((cId, index) => {
@@ -169,6 +180,7 @@ export function CustomSaladModal({
     selectedAderezos.forEach((aId, i) => {
       const a = aderezos.find((x) => x.id === aId)!;
       allSelected.push({ ingredient: a, extraCost: i === 0 ? 0 : 15 });
+      buildLabel.push(a.name);
     });
 
     const label = buildLabel.join(", ");

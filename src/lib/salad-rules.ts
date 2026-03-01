@@ -70,11 +70,17 @@ export const isPremiumToppingIngredient = (ingredient: Ingredient) =>
 export const isAllowedSaladProtein = (ingredient: Ingredient) => {
   if (ingredient.type !== "proteina") return false;
   const name = normalizeName(ingredient.name);
-  return regularProteins.has(name) || premiumProteins.has(name);
+  // Permit all proteins from DB so menu changes don't break "Arma tu ensalada".
+  // If not listed explicitly, pricing falls back to ingredient.is_premium.
+  if (regularProteins.has(name) || premiumProteins.has(name)) return true;
+  return true;
 };
 
 export const isAllowedSaladTopping = (ingredient: Ingredient) => {
   if (ingredient.type !== "topping") return false;
   const name = normalizeName(ingredient.name);
-  return regularToppings.has(name) || premiumToppings.has(name);
+  // Permit all toppings from DB so menu changes don't break "Arma tu ensalada".
+  // If not listed explicitly, pricing falls back to ingredient.is_premium.
+  if (regularToppings.has(name) || premiumToppings.has(name)) return true;
+  return true;
 };
