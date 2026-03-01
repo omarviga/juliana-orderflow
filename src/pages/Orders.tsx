@@ -317,9 +317,10 @@ export default function OrdersPage() {
   };
 
   const handleRegisterOpening = () => {
-    const amount = Number.parseFloat(openingAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error("Ingresa un monto válido para la apertura.");
+    const normalizedOpeningAmount = openingAmount.trim() === "" ? "0" : openingAmount;
+    const amount = Number.parseFloat(normalizedOpeningAmount);
+    if (!Number.isFinite(amount) || amount < 0) {
+      toast.error("Ingresa un monto válido para la apertura (0 o mayor).");
       return;
     }
 
@@ -876,7 +877,7 @@ export default function OrdersPage() {
           <DialogHeader>
             <DialogTitle>Apertura de Caja</DialogTitle>
             <DialogDescription>
-              Captura el fondo inicial para abrir la caja.
+              Captura el fondo inicial para abrir la caja. Puedes abrir con 0.
             </DialogDescription>
           </DialogHeader>
 
@@ -889,7 +890,7 @@ export default function OrdersPage() {
                 step="0.01"
                 value={openingAmount}
                 onChange={(event) => setOpeningAmount(event.target.value)}
-                placeholder="Ej. 1000"
+                placeholder="Ej. 0 o 1000"
                 inputMode="decimal"
                 enterKeyHint="done"
               />

@@ -906,6 +906,23 @@ export function generateCashCutTicketEscPos(
   const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
   const depositsTotal = (details?.deposits || []).reduce((sum, d) => sum + d.amount, 0);
   const withdrawalsTotal = (details?.withdrawals || []).reduce((sum, d) => sum + d.amount, 0);
+  const deposits = details?.deposits || [];
+  const withdrawals = details?.withdrawals || [];
+  const products = details?.products || [];
+  const chars = config.charsPerLine;
+
+  const toAmount = (value: number) => `$${value.toFixed(0)}`;
+  const padRightAmount = (left: string, right: string) => {
+    if (left.length + right.length + 1 > chars) {
+      return `${left} ${right}`;
+    }
+    return `${left}${" ".repeat(chars - left.length - right.length)}${right}`;
+  };
+
+  const pushSectionTitle = (commands: number[], sectionTitle: string) => {
+    commands.push(...encode(separator));
+    commands.push(...BOLD_ON, ...encode(sectionTitle), ...BOLD_OFF);
+  };
 
   const commands = [
     ...RESET,
@@ -921,28 +938,105 @@ export function generateCashCutTicketEscPos(
     ...encode(generatedAt),
     ...encode(separator),
     ...LEFT,
-    ...encode(`VENTAS: ${sales.length}`),
-    ...encode(`EFECTIVO: $${cashTotal.toFixed(0)}`),
-    ...encode(`TARJETA: $${cardTotal.toFixed(0)}`),
+    ...encode(padRightAmount("VENTAS (TICKETS)", `${sales.length}`)),
+    ...encode(padRightAmount("EFECTIVO", toAmount(cashTotal))),
+    ...encode(padRightAmount("TARJETA", toAmount(cardTotal))),
   ];
 
-  if (details?.opening) {
-    commands.push(...encode(`APERTURA: $${details.opening.amount.toFixed(0)}`));
+  pushSectionTitle(commands, "DETALLE DE VENTAS");
+  if (sales.length === 0) {
+    commands.push(...encode("SIN VENTAS REGISTRADAS."));
+  } else {
+    sales.forEach((sale) => {
+      const paymentLabel = sale.paymentMethod === "tarjeta" ? "TARJETA" : "EFECTIVO";
+      const saleHeader = padRightAmount(`#${sale.orderNumber}`, `${paymentLabel} ${toAmount(sale.total)}`);
+      const hour = new Date(sale.createdAt).toLocaleTimeString("es-MX", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      const customer = (sale.customerName || "MOSTRADOR").trim().toLowerCase();
+      commands.push(...BOLD_ON, ...encode(saleHeader), ...BOLD_OFF);
+      commands.push(...encode(`${hour} - ${customer}`));
+      commands.push(...encode("-".repeat(chars)));
+    });
   }
-  commands.push(...encode(`INGRESOS: $${depositsTotal.toFixed(0)}`));
-  commands.push(...encode(`RETIROS: $${withdrawalsTotal.toFixed(0)}`));
+
+  pushSectionTitle(commands, "APERTURA DE CAJA");
+  if (details?.opening) {
+    const openingHour = new Date(details.opening.createdAt).toLocaleTimeString("es-MX", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    commands.push(
+      ...encode(
+        padRightAmount(details.opening.note?.trim() || "APERTURA DE CAJA", toAmount(details.opening.amount))
+      )
+    );
+    commands.push(...encode(openingHour));
+  } else {
+    commands.push(...encode("SIN APERTURA REGISTRADA."));
+  }
+
+  pushSectionTitle(commands, "PRODUCTOS VENDIDOS");
+  if (products.length === 0) {
+    commands.push(...encode("SIN PRODUCTOS VENDIDOS."));
+  } else {
+    products.forEach((product) => {
+      commands.push(
+        ...encode(padRightAmount(`${product.name} x ${product.quantity}`, toAmount(product.total)))
+      );
+    });
+  }
+
+  if (deposits.length > 0 || withdrawals.length > 0) {
+    pushSectionTitle(commands, "MOVIMIENTOS DE CAJA");
+    deposits.forEach((entry) => {
+      const hour = new Date(entry.createdAt).toLocaleTimeString("es-MX", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      commands.push(...encode(padRightAmount(`INGRESO ${hour}`, toAmount(entry.amount))));
+      if (entry.reason?.trim()) {
+        commands.push(...encode(`  ${entry.reason.trim()}`));
+      }
+    });
+    withdrawals.forEach((entry) => {
+      const hour = new Date(entry.createdAt).toLocaleTimeString("es-MX", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      commands.push(...encode(padRightAmount(`RETIRO ${hour}`, toAmount(entry.amount))));
+      if (entry.reason?.trim()) {
+        commands.push(...encode(`  ${entry.reason.trim()}`));
+      }
+    });
+    commands.push(...encode(padRightAmount("TOTAL INGRESOS", toAmount(depositsTotal))));
+    commands.push(...encode(padRightAmount("TOTAL RETIROS", toAmount(withdrawalsTotal))));
+  }
 
   if (countSummary) {
-    commands.push(...encode(separator));
-    commands.push(...BOLD_ON, ...encode("CONTEO"), ...BOLD_OFF);
-    commands.push(...encode(`ESP: $${countSummary.expectedCash.toFixed(0)}`));
-    commands.push(...encode(`CONTADO: $${countSummary.countedCash.toFixed(0)}`));
-    commands.push(...encode(`DIF: $${countSummary.difference.toFixed(0)}`));
+    pushSectionTitle(commands, "CONTEO EFECTIVO");
+    countSummary.entries
+      .filter((entry) => entry.quantity > 0)
+      .forEach((entry) => {
+        commands.push(
+          ...encode(
+            padRightAmount(`${entry.label} x ${entry.quantity}`, toAmount(entry.value * entry.quantity))
+          )
+        );
+      });
+    commands.push(...encode(padRightAmount("EFECTIVO ESPERADO", toAmount(countSummary.expectedCash))));
+    commands.push(...encode(padRightAmount("EFECTIVO CONTADO", toAmount(countSummary.countedCash))));
+    commands.push(...encode(padRightAmount("DIFERENCIA", toAmount(countSummary.difference))));
   }
 
   commands.push(...encode(separator));
-  commands.push(...CENTER, ...FONT_LARGE, ...BOLD_ON);
-  commands.push(...encode(`TOTAL: $${totalSales.toFixed(0)}`));
+  commands.push(...LEFT, ...FONT_LARGE, ...BOLD_ON);
+  commands.push(...encode(padRightAmount("TOTAL", toAmount(totalSales))));
   commands.push(...BOLD_OFF, ...FONT_NORMAL);
   commands.push(...FEED_3_LINES);
 
