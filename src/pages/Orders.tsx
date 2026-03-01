@@ -686,7 +686,7 @@ export default function OrdersPage() {
       </div>
 
       <Dialog open={cashCutOpen} onOpenChange={setCashCutOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="w-[95vw] max-w-xl max-h-[90vh] overflow-y-auto md:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Corte de Caja (Hoy)</DialogTitle>
             <DialogDescription>
@@ -730,7 +730,7 @@ export default function OrdersPage() {
             </div>
           </div>
 
-          <div className="max-h-[45vh] overflow-y-auto rounded-lg border">
+          <div className="max-h-[30vh] overflow-y-auto rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -752,7 +752,7 @@ export default function OrdersPage() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="h-8 w-8 px-0"
+                            className="h-7 w-7 px-0"
                             onClick={() => setDenominationCount(denomination.key, quantity - 1)}
                           >
                             -
@@ -761,7 +761,7 @@ export default function OrdersPage() {
                             type="number"
                             min="0"
                             value={quantity}
-                            className="h-8 w-20 text-right"
+                            className="h-7 w-16 text-right"
                             readOnly={isTouchDevice}
                             inputMode="numeric"
                             enterKeyHint="done"
@@ -775,7 +775,7 @@ export default function OrdersPage() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="h-8 w-8 px-0"
+                            className="h-7 w-7 px-0"
                             onClick={() => setDenominationCount(denomination.key, quantity + 1)}
                           >
                             +
@@ -794,7 +794,7 @@ export default function OrdersPage() {
 
           <div className="rounded-lg border p-3">
             <p className="mb-2 text-sm font-medium text-foreground">Productos vendidos</p>
-            <div className="max-h-40 space-y-1 overflow-y-auto text-sm">
+            <div className="max-h-32 space-y-1 overflow-y-auto text-sm">
               {soldProductsForCut.length === 0 ? (
                 <p className="text-muted-foreground">Sin productos vendidos hoy.</p>
               ) : (
@@ -811,7 +811,7 @@ export default function OrdersPage() {
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
             <div className="rounded-lg border p-3">
               <p className="mb-2 text-sm font-medium text-foreground">Apertura de caja</p>
-              <div className="max-h-40 space-y-1 overflow-y-auto text-sm">
+              <div className="max-h-32 space-y-1 overflow-y-auto text-sm">
                 {!openingForCut ? (
                   <p className="text-muted-foreground">Sin apertura registrada hoy.</p>
                 ) : (
@@ -830,7 +830,7 @@ export default function OrdersPage() {
 
             <div className="rounded-lg border p-3">
               <p className="mb-2 text-sm font-medium text-foreground">Ingresos a caja</p>
-              <div className="max-h-40 space-y-1 overflow-y-auto text-sm">
+              <div className="max-h-32 space-y-1 overflow-y-auto text-sm">
                 {depositsForCut.length === 0 ? (
                   <p className="text-muted-foreground">Sin ingresos registrados hoy.</p>
                 ) : (
@@ -851,7 +851,7 @@ export default function OrdersPage() {
 
             <div className="rounded-lg border p-3">
               <p className="mb-2 text-sm font-medium text-foreground">Retiros de efectivo</p>
-              <div className="max-h-40 space-y-1 overflow-y-auto text-sm">
+              <div className="max-h-32 space-y-1 overflow-y-auto text-sm">
                 {withdrawalsForCut.length === 0 ? (
                   <p className="text-muted-foreground">Sin retiros registrados hoy.</p>
                 ) : (
@@ -872,7 +872,7 @@ export default function OrdersPage() {
 
             <div className="rounded-lg border p-3">
               <p className="mb-2 text-sm font-medium text-foreground">Transacciones con tarjeta</p>
-              <div className="max-h-40 space-y-1 overflow-y-auto text-sm">
+              <div className="max-h-32 space-y-1 overflow-y-auto text-sm">
                 {salesForCut.filter((sale) => sale.paymentMethod === "tarjeta").length === 0 ? (
                   <p className="text-muted-foreground">Sin pagos con tarjeta hoy.</p>
                 ) : (
@@ -900,7 +900,7 @@ export default function OrdersPage() {
 
           <div className="rounded-lg border p-3">
             <p className="mb-2 text-sm font-medium text-foreground">Cortes registrados hoy</p>
-            <div className="max-h-40 space-y-1 overflow-y-auto text-sm">
+            <div className="max-h-32 space-y-1 overflow-y-auto text-sm">
               {cutsForToday.length === 0 ? (
                 <p className="text-muted-foreground">Sin cortes registrados hoy.</p>
               ) : (

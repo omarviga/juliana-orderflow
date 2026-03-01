@@ -925,14 +925,26 @@ export function generateClientTicketEscPos(
   options?: { openDrawer?: boolean; fullCut?: boolean }
 ): number[] {
   const config = PRINTER_CONFIGS["80mm"];
-  const fullSeparator = "=".repeat(config.charsPerLine);
-  const lightSeparator = "-".repeat(config.charsPerLine);
+  const strongSeparator = "_".repeat(config.charsPerLine);
   const money = (value: number) => `$${value.toFixed(0)}`;
   const padRightAmount = (left: string, right: string) => {
     if (left.length + right.length + 1 > config.charsPerLine) {
       return `${left} ${right}`;
     }
     return `${left}${" ".repeat(config.charsPerLine - left.length - right.length)}${right}`;
+  };
+  const boxTop = "+" + "-".repeat(Math.max(0, config.charsPerLine - 2)) + "+";
+  const boxBottom = boxTop;
+  const boxLine = (text: string = "") => {
+    const contentWidth = Math.max(0, config.charsPerLine - 4);
+    const normalized = text.slice(0, contentWidth);
+    return `| ${normalized}${" ".repeat(Math.max(0, contentWidth - normalized.length))} |`;
+  };
+  const boxLineAmount = (left: string, right: string) => {
+    const contentWidth = Math.max(0, config.charsPerLine - 4);
+    const line = padRightAmount(left, right);
+    const normalized = line.slice(0, contentWidth);
+    return `| ${normalized}${" ".repeat(Math.max(0, contentWidth - normalized.length))} |`;
   };
   const wrapLine = (value: string, width: number) => {
     const words = value.trim().split(/\s+/);
@@ -956,7 +968,6 @@ export function generateClientTicketEscPos(
     ...CODE_PAGE_CP850,
     ...LEFT,
     ...CENTER,
-    ...encode(fullSeparator),
     ...FONT_LARGE,
     ...BOLD_ON,
     ...encode("JULIANA"),
@@ -967,22 +978,21 @@ export function generateClientTicketEscPos(
     ...encode("AV. MIGUEL HIDALGO #276, COL CENTRO,"),
     ...encode("ACAMBARO GTO."),
     ...encode("Tel. 417 206 9111"),
-    ...encode(fullSeparator),
+    ...encode(strongSeparator),
     ...LEFT,
-    ...encode(lightSeparator),
     ...BOLD_ON,
     ...encode("DETALLE DEL PEDIDO"),
     ...BOLD_OFF,
-    ...encode(lightSeparator),
-    ...encode(padRightAmount("Pedido", `#${orderNumber || "---"}`)),
-    ...encode(padRightAmount("Cliente", customerName || "Barra")),
-    ...encode(padRightAmount("Fecha", dateStr)),
-    ...encode(padRightAmount("Pago", paymentMethodLabel)),
-    ...encode(lightSeparator),
+    ...encode(boxTop),
+    ...encode(boxLineAmount("Pedido", `#${orderNumber || "---"}`)),
+    ...encode(boxLineAmount("Cliente", customerName || "Barra")),
+    ...encode(boxLineAmount("Fecha", dateStr)),
+    ...encode(boxLineAmount("Pago", paymentMethodLabel)),
+    ...encode(boxBottom),
     ...BOLD_ON,
     ...encode("CONSUMO"),
     ...BOLD_OFF,
-    ...encode(lightSeparator),
+    ...encode(boxTop),
   ];
 
   items.forEach((item) => {
@@ -990,28 +1000,30 @@ export function generateClientTicketEscPos(
     const priceLine = money(item.subtotal);
     const itemLines = wrapLine(itemTitle, config.charsPerLine - priceLine.length - 1);
 
-    commands.push(...encode(padRightAmount(itemLines[0], priceLine)));
-    itemLines.slice(1).forEach((line) => commands.push(...encode(line)));
+    commands.push(...encode(boxLineAmount(itemLines[0], priceLine)));
+    itemLines.slice(1).forEach((line) => commands.push(...encode(boxLine(line))));
 
     const detailLines: string[] = [];
     if (item.customLabel) detailLines.push(item.customLabel);
     if (item.kitchenNote) detailLines.push(`Nota: ${item.kitchenNote}`);
     if (detailLines.length === 0) detailLines.push("Sin extras");
     detailLines.forEach((detail) => {
-      wrapLine(`  - ${detail}`, config.charsPerLine).forEach((line) => commands.push(...encode(line)));
+      wrapLine(`  - ${detail}`, config.charsPerLine - 4).forEach((line) => commands.push(...encode(boxLine(line))));
     });
   });
 
-  commands.push(...encode(fullSeparator));
+  commands.push(...encode(boxBottom));
   commands.push(...LEFT, ...FONT_LARGE, ...BOLD_ON);
-  commands.push(...encode(padRightAmount("TOTAL", money(total))));
+  commands.push(...encode(boxTop));
+  commands.push(...encode(boxLineAmount("TOTAL", money(total))));
+  commands.push(...encode(boxBottom));
   commands.push(...BOLD_OFF, ...FONT_NORMAL);
-  commands.push(...encode(fullSeparator));
   commands.push(...CENTER);
-  commands.push(...encode("GRACIAS POR TU VISITA"));
-  commands.push(...encode(lightSeparator));
+  commands.push(...encode(strongSeparator));
+  commands.push(...encode("GRACIAS POR VISITARNOS"));
+  commands.push(...encode(strongSeparator));
   commands.push(...encode("TE ESPERAMOS PRONTO"));
-  commands.push(...encode(lightSeparator));
+  commands.push(...encode(strongSeparator));
   commands.push(...FEED_3_LINES);
 
   if (options?.openDrawer) commands.push(...OPEN_DRAWER);

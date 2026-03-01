@@ -56,10 +56,17 @@ const Index = () => {
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "");
 
-    return categories.filter((category) => {
+    const deduped = new Map<string, (typeof categories)[number]>();
+
+    for (const category of categories) {
       const key = normalizeCategoryName(category.name);
-      return !HIDDEN_CATEGORY_NAMES.has(key);
-    });
+      if (HIDDEN_CATEGORY_NAMES.has(key)) continue;
+      if (!deduped.has(key)) {
+        deduped.set(key, category);
+      }
+    }
+
+    return [...deduped.values()];
   }, [categories]);
 
   useEffect(() => {
