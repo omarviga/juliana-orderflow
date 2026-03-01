@@ -27,6 +27,13 @@ const MENU_BUCKET = import.meta.env.VITE_SUPABASE_MENU_BUCKET || "menus";
 const ALLOWED_MIME_TYPES = ["image/png", "image/jpeg", "application/pdf"];
 const ALLOWED_EXTENSIONS = [".png", ".jpg", ".jpeg", ".pdf"];
 
+const normalizeProductKey = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
 export default function SettingsPage() {
   const { settings, updateSettings, resetToDefaults } = useSystemSettings();
   const { data: categories = [] } = useCategories();
@@ -48,6 +55,28 @@ export default function SettingsPage() {
   const [newProductCategoryId, setNewProductCategoryId] = useState<string>("");
   const [priceDraftByProductId, setPriceDraftByProductId] = useState<Record<string, string>>({});
   const [isSavingMenu, setIsSavingMenu] = useState(false);
+
+  const uniqueProducts = useMemo(() => {
+    const uniqueByCategoryAndName = new Map<string, (typeof products)[number]>();
+
+    for (const product of products) {
+      const key = `${product.category_id}:${normalizeProductKey(product.name)}`;
+      const existing = uniqueByCategoryAndName.get(key);
+
+      if (!existing) {
+        uniqueByCategoryAndName.set(key, product);
+        continue;
+      }
+
+      const existingDate = Date.parse(existing.created_at || "");
+      const productDate = Date.parse(product.created_at || "");
+      if (!Number.isNaN(productDate) && (Number.isNaN(existingDate) || productDate < existingDate)) {
+        uniqueByCategoryAndName.set(key, product);
+      }
+    }
+
+    return Array.from(uniqueByCategoryAndName.values());
+  }, [products]);
 
   const dessertsCategory = useMemo(
     () =>
@@ -240,6 +269,16 @@ export default function SettingsPage() {
     }
     if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
       toast.error("Ingresa un precio válido");
+      return;
+    }
+
+    const duplicateExists = products.some(
+      (product) =>
+        product.category_id === newProductCategoryId &&
+        normalizeProductKey(product.name) === normalizeProductKey(trimmedName)
+    );
+    if (duplicateExists) {
+      toast.error("Ese producto ya existe en la categoría seleccionada");
       return;
     }
 
@@ -661,7 +700,7 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <h3 className="text-sm font-semibold">Productos y precios</h3>
                   <div className="space-y-2">
-                    {products.map((product) => (
+                    {uniqueProducts.map((product) => (
                       <div key={product.id} className="grid grid-cols-1 gap-2 rounded-lg border p-3 md:grid-cols-[1fr_220px_120px]">
                         <div>
                           <p className="text-sm font-medium">{product.name}</p>
@@ -690,7 +729,7 @@ export default function SettingsPage() {
                         </Button>
                       </div>
                     ))}
-                    {products.length === 0 && (
+                    {uniqueProducts.length === 0 && (
                       <p className="text-sm text-muted-foreground">
                         No hay productos disponibles.
                       </p>
