@@ -606,7 +606,7 @@ export async function printToDevice(
 }
 
 const PRINTER_BT_SERVICE_UUID = "00001101-0000-1000-8000-00805f9b34fb";
-const PRINTER_BT_FALLBACK_CHAR_UUID = "2a19";
+const FIXED_PRINTER_NAME = "glprinter";
 
 type ActiveBluetoothSession = {
   deviceAddress: string;
@@ -627,16 +627,22 @@ async function resolveBluetoothDevice(deviceAddress: string): Promise<BluetoothD
     const known = pairedDevices.find((device) => device.id === deviceAddress);
     if (known) return known;
     const glPrinter = pairedDevices.find((device) =>
-      (device.name || "").toLowerCase().includes("glprinter")
+      (device.name || "").toLowerCase().includes(FIXED_PRINTER_NAME)
     );
     if (glPrinter) return glPrinter;
-    if (pairedDevices.length > 0) return pairedDevices[0];
   }
 
-  return navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
-    optionalServices: [PRINTER_BT_SERVICE_UUID, "0000180a-0000-1000-8000-00805f9b34fb"],
-  });
+  try {
+    return await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "GL" }],
+      optionalServices: [PRINTER_BT_SERVICE_UUID, "0000180a-0000-1000-8000-00805f9b34fb"],
+    });
+  } catch {
+    return navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [PRINTER_BT_SERVICE_UUID, "0000180a-0000-1000-8000-00805f9b34fb"],
+    });
+  }
 }
 
 async function resolveWritableCharacteristic(
@@ -656,17 +662,29 @@ async function resolveWritableCharacteristic(
     throw new Error("No se pudo conectar a GATT server");
   }
 
-  const service = await server.getPrimaryService(PRINTER_BT_SERVICE_UUID);
-  let characteristic: BluetoothRemoteGATTCharacteristic;
-  try {
-    characteristic = await service.getCharacteristic(PRINTER_BT_FALLBACK_CHAR_UUID);
-  } catch {
+  const services = await server.getPrimaryServices();
+  if (services.length === 0) {
+    throw new Error("No se encontraron servicios GATT en la impresora");
+  }
+
+  let characteristic: BluetoothRemoteGATTCharacteristic | null = null;
+  for (const service of services) {
     const characteristics = await service.getCharacteristics();
-    const writable = characteristics.find((c) => c.properties.write || c.properties.writeWithoutResponse);
-    if (!writable) {
-      throw new Error("No se encontró característica escribible");
+    const writableWithoutResponse = characteristics.find((c) => c.properties.writeWithoutResponse);
+    if (writableWithoutResponse) {
+      characteristic = writableWithoutResponse;
+      break;
     }
-    characteristic = writable;
+
+    const writable = characteristics.find((c) => c.properties.write);
+    if (writable) {
+      characteristic = writable;
+      break;
+    }
+  }
+
+  if (!characteristic) {
+    throw new Error("No se encontró característica escribible en servicios GATT");
   }
 
   const handleDisconnected = () => {
@@ -707,43 +725,44 @@ export async function printMultipleToDevice(
     return;
   }
 
-  try {
-    const characteristic = await resolveWritableCharacteristic(deviceAddress);
-
-    // Convertir todos los HTML a datos imprimibles en un solo trabajo.
-    const printData = jobs.flatMap((job) => {
-      if (job.escPosCommands) {
-        return job.escPosCommands;
-      }
-      if (job.htmlContent) {
-        throw new Error("Modo ESC/POS estricto: htmlContent no permitido");
-      }
-      return [];
-    });
-
-    console.log("Enviando", printData.length, "bytes a la impresora");
-
-    // Enviar datos a la impresora en chunks (Android tiene límite de 512 bytes)
-    const CHUNK_SIZE = 512;
-    for (let i = 0; i < printData.length; i += CHUNK_SIZE) {
-      const chunk = printData.slice(i, Math.min(i + CHUNK_SIZE, printData.length));
-      const buffer = new Uint8Array(chunk);
-
-      if (characteristic.properties.writeWithoutResponse) {
-        await characteristic.writeValueWithoutResponse(buffer);
-      } else {
-        await characteristic.writeValue(buffer);
-      }
-
-      // Pequeña pausa entre chunks
-      await new Promise((resolve) => setTimeout(resolve, 50));
+  const printData = jobs.flatMap((job) => {
+    if (job.escPosCommands) {
+      return job.escPosCommands;
     }
+    if (job.htmlContent) {
+      throw new Error("Modo ESC/POS estricto: htmlContent no permitido");
+    }
+    return [];
+  });
 
-    console.log("Datos enviados exitosamente");
-  } catch (error) {
-    clearActiveBluetoothSession();
-    console.error("Error de impresión:", error);
-    throw error;
+  console.log("Enviando", printData.length, "bytes a la impresora");
+
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const characteristic = await resolveWritableCharacteristic(deviceAddress);
+      const chunkSize = characteristic.properties.writeWithoutResponse ? 180 : 256;
+      for (let i = 0; i < printData.length; i += chunkSize) {
+        const chunk = printData.slice(i, Math.min(i + chunkSize, printData.length));
+        const buffer = new Uint8Array(chunk);
+
+        if (characteristic.properties.writeWithoutResponse) {
+          await characteristic.writeValueWithoutResponse(buffer);
+        } else {
+          await characteristic.writeValue(buffer);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      }
+
+      console.log("Datos enviados exitosamente");
+      return;
+    } catch (error) {
+      clearActiveBluetoothSession();
+      console.error(`Error de impresión (intento ${attempt}/2):`, error);
+      if (attempt >= 2) {
+        throw error;
+      }
+    }
   }
 }
 

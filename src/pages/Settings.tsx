@@ -890,18 +890,13 @@ export default function SettingsPage() {
                       Impresión Automática
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      Imprime automáticamente al confirmar pedido
+                      Siempre activa para GLPrinter (modo automático)
                     </p>
                   </div>
                   <Switch
                     id="auto-print"
-                    checked={preferences.autoPrint}
-                    onCheckedChange={(checked) =>
-                      savePreferences({
-                        ...preferences,
-                        autoPrint: checked,
-                      })
-                    }
+                    checked={true}
+                    disabled
                   />
                 </div>
 
