@@ -1,3 +1,5 @@
+import { supabase } from "@/integrations/supabase/client";
+
 export type PaymentMethod = "efectivo" | "tarjeta";
 export type CashMovementType = "retiro" | "ingreso";
 
@@ -36,6 +38,8 @@ export interface CashOpening {
   amount: number;
   note: string;
   createdAt: string;
+  sessionId?: string;
+  denominations?: CashCutEntry[];
 }
 
 export interface CashCutEntry {
@@ -58,6 +62,22 @@ export interface CashCutRecord {
   withdrawalsTotal: number;
   entries: CashCutEntry[];
   note?: string;
+  sessionId?: string;
+}
+
+export interface CashRegisterSession {
+  id: string;
+  openedAt: string;
+  closedAt: string | null;
+  openingAmount: number;
+  closingAmount: number | null;
+  expectedAmount: number | null;
+  difference: number | null;
+  openingDenominations: CashCutEntry[];
+  closingDenominations: CashCutEntry[];
+  notes: string | null;
+  status: "open" | "closed";
+  createdAt: string;
 }
 
 function readSales(): CashRegisterSale[] {
@@ -146,6 +166,55 @@ function writeCashCuts(cuts: CashCutRecord[]): void {
   localStorage.setItem(CASH_CUTS_STORAGE_KEY, JSON.stringify(cuts));
 }
 
+function toCashEntries(value: unknown): CashCutEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const maybe = entry as Partial<CashCutEntry>;
+      const label = typeof maybe.label === "string" ? maybe.label : "";
+      const parsedValue = Number(maybe.value);
+      const parsedQty = Number(maybe.quantity);
+      if (!Number.isFinite(parsedValue) || !Number.isFinite(parsedQty)) return null;
+      return {
+        label,
+        value: parsedValue,
+        quantity: Math.max(0, Math.floor(parsedQty)),
+      };
+    })
+    .filter((entry): entry is CashCutEntry => Boolean(entry));
+}
+
+function mapSessionRow(row: {
+  id: string;
+  opened_at: string;
+  closed_at: string | null;
+  opening_amount: number;
+  closing_amount: number | null;
+  expected_amount: number | null;
+  difference: number | null;
+  opening_denominations: unknown;
+  closing_denominations: unknown;
+  notes: string | null;
+  status: string;
+  created_at: string;
+}): CashRegisterSession {
+  return {
+    id: row.id,
+    openedAt: row.opened_at,
+    closedAt: row.closed_at,
+    openingAmount: Number(row.opening_amount || 0),
+    closingAmount: row.closing_amount == null ? null : Number(row.closing_amount),
+    expectedAmount: row.expected_amount == null ? null : Number(row.expected_amount),
+    difference: row.difference == null ? null : Number(row.difference),
+    openingDenominations: toCashEntries(row.opening_denominations),
+    closingDenominations: toCashEntries(row.closing_denominations),
+    notes: row.notes,
+    status: row.status === "closed" ? "closed" : "open",
+    createdAt: row.created_at,
+  };
+}
+
 function migrateLegacyWithdrawalsToMovements(): void {
   const movements = readMovements();
   if (movements.length > 0) return;
@@ -196,12 +265,16 @@ export function registerCashMovement(movement: {
 export function registerCashOpening(opening: {
   amount: number;
   note?: string;
+  sessionId?: string;
+  denominations?: CashCutEntry[];
 }): CashOpening {
   const next: CashOpening = {
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
     amount: Math.max(0, opening.amount),
     note: opening.note?.trim() || "Apertura de caja",
+    sessionId: opening.sessionId,
+    denominations: opening.denominations || [],
   };
 
   const openings = readOpenings();
@@ -292,6 +365,7 @@ export function registerCashCut(cut: Omit<CashCutRecord, "id" | "createdAt">): C
     withdrawalsTotal: cut.withdrawalsTotal,
     entries: cut.entries,
     note: cut.note,
+    sessionId: cut.sessionId,
   };
 
   const cuts = readCashCuts();
@@ -320,6 +394,78 @@ export function getTodaySalesRange(): { from: Date; to: Date } {
   const from = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
   const to = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
   return { from, to };
+}
+
+export async function openCashRegisterSession(input: {
+  openingAmount: number;
+  openingDenominations?: CashCutEntry[];
+  notes?: string;
+}): Promise<CashRegisterSession> {
+  const { data, error } = await supabase
+    .from("cash_register_sessions")
+    .insert({
+      opening_amount: Math.max(0, input.openingAmount),
+      opening_denominations: input.openingDenominations || [],
+      notes: input.notes?.trim() || "Apertura de caja",
+      status: "open",
+    })
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw error || new Error("No se pudo abrir la sesión de caja.");
+  }
+
+  return mapSessionRow(data);
+}
+
+export async function getOpenCashRegisterSessionToday(): Promise<CashRegisterSession | null> {
+  const { from, to } = getTodaySalesRange();
+  const { data, error } = await supabase
+    .from("cash_register_sessions")
+    .select("*")
+    .eq("status", "open")
+    .gte("opened_at", from.toISOString())
+    .lte("opened_at", to.toISOString())
+    .order("opened_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+  if (!data) return null;
+  return mapSessionRow(data);
+}
+
+export async function closeCashRegisterSession(input: {
+  sessionId: string;
+  closingAmount: number;
+  expectedAmount: number;
+  difference: number;
+  closingDenominations?: CashCutEntry[];
+  notes?: string;
+}): Promise<CashRegisterSession> {
+  const { data, error } = await supabase
+    .from("cash_register_sessions")
+    .update({
+      closed_at: new Date().toISOString(),
+      closing_amount: input.closingAmount,
+      expected_amount: input.expectedAmount,
+      difference: input.difference,
+      closing_denominations: input.closingDenominations || [],
+      notes: input.notes?.trim() || "Corte de caja",
+      status: "closed",
+    })
+    .eq("id", input.sessionId)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw error || new Error("No se pudo cerrar la sesión de caja.");
+  }
+
+  return mapSessionRow(data);
 }
 
 export function isCashRegisterOpenToday(): boolean {

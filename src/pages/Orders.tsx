@@ -33,11 +33,14 @@ import { es } from "date-fns/locale";
 import { ChevronRight, Printer } from "lucide-react";
 import type { OrderWithItems } from "@/hooks/useOrders";
 import {
+  closeCashRegisterSession,
   getCashCuts,
   getCashOpenings,
+  getOpenCashRegisterSessionToday,
   getCashRegisterSales,
   getCashMovements,
   getTodaySalesRange,
+  openCashRegisterSession,
   registerCashCut,
   registerCashOpening,
   registerCashMovement,
@@ -52,18 +55,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatCurrencyMXN } from "@/lib/currency";
 
 const CASH_DENOMINATIONS = [
-  { key: "1000", label: "Billete $1000", value: 1000 },
-  { key: "500", label: "Billete $500", value: 500 },
-  { key: "200", label: "Billete $200", value: 200 },
-  { key: "100", label: "Billete $100", value: 100 },
-  { key: "50b", label: "Billete $50", value: 50 },
-  { key: "20b", label: "Billete $20", value: 20 },
-  { key: "20m", label: "Moneda $20", value: 20 },
-  { key: "10m", label: "Moneda $10", value: 10 },
-  { key: "5m", label: "Moneda $5", value: 5 },
-  { key: "2m", label: "Moneda $2", value: 2 },
-  { key: "1m", label: "Moneda $1", value: 1 },
-  { key: "050m", label: "Moneda $0.50", value: 0.5 },
+  { key: "500", label: "$500", value: 500 },
+  { key: "200", label: "$200", value: 200 },
+  { key: "100", label: "$100", value: 100 },
+  { key: "50", label: "$50", value: 50 },
+  { key: "20", label: "$20", value: 20 },
+  { key: "10", label: "$10", value: 10 },
+  { key: "5", label: "$5", value: 5 },
+  { key: "2", label: "$2", value: 2 },
+  { key: "1", label: "$1", value: 1 },
 ];
 
 function createInitialCounts(): Record<string, number> {
@@ -88,6 +88,7 @@ export default function OrdersPage() {
   const [cashOpeningOpen, setCashOpeningOpen] = useState(false);
   const [cashMovementOpen, setCashMovementOpen] = useState(false);
   const [cashMovementType, setCashMovementType] = useState<CashMovementType>("retiro");
+  const [openingCashCounts, setOpeningCashCounts] = useState<Record<string, number>>(createInitialCounts);
   const [cashCounts, setCashCounts] = useState<Record<string, number>>(createInitialCounts);
   const [salesForCut, setSalesForCut] = useState<CashRegisterSale[]>([]);
   const [openingForCut, setOpeningForCut] = useState<CashOpening | null>(null);
@@ -154,6 +155,14 @@ export default function OrdersPage() {
       ),
     [cashCounts]
   );
+  const openingCountedCash = useMemo(
+    () =>
+      CASH_DENOMINATIONS.reduce(
+        (sum, denomination) => sum + denomination.value * (openingCashCounts[denomination.key] || 0),
+        0
+      ),
+    [openingCashCounts]
+  );
 
   const openingAmountForCut = openingForCut?.amount || 0;
   const withdrawalsForCut = useMemo(
@@ -195,7 +204,23 @@ export default function OrdersPage() {
     return getCashMovements({ dateFrom: from, dateTo: to });
   };
 
-  const loadTodayOpening = () => {
+  const loadTodayOpening = async () => {
+    try {
+      const openSession = await getOpenCashRegisterSessionToday();
+      if (openSession) {
+        return {
+          id: openSession.id,
+          amount: openSession.openingAmount,
+          note: openSession.notes || "Apertura de caja",
+          createdAt: openSession.openedAt,
+          sessionId: openSession.id,
+          denominations: openSession.openingDenominations,
+        } as CashOpening;
+      }
+    } catch {
+      // Si falla Supabase, usamos respaldo local.
+    }
+
     const { from, to } = getTodaySalesRange();
     const openings = getCashOpenings({ dateFrom: from, dateTo: to });
     return openings.length > 0 ? openings[openings.length - 1] : null;
@@ -271,7 +296,7 @@ export default function OrdersPage() {
   const handleOpenCashCut = async () => {
     const todaySales = loadTodaySales();
     const todayMovements = loadTodayMovements();
-    const todayOpening = loadTodayOpening();
+    const todayOpening = await loadTodayOpening();
     if (!todayOpening) {
       toast.error("Primero debes registrar la apertura de caja del día.");
       setCashOpeningOpen(true);
@@ -316,22 +341,43 @@ export default function OrdersPage() {
     }
   };
 
-  const handleRegisterOpening = () => {
-    const normalizedOpeningAmount = openingAmount.trim() === "" ? "0" : openingAmount;
+  const handleRegisterOpening = async () => {
+    const normalizedOpeningAmount = openingAmount.trim() === "" ? `${openingCountedCash}` : openingAmount;
     const amount = Number.parseFloat(normalizedOpeningAmount);
     if (!Number.isFinite(amount) || amount < 0) {
       toast.error("Ingresa un monto válido para la apertura (0 o mayor).");
       return;
     }
 
+    let sessionId: string | undefined;
+    const entries = CASH_DENOMINATIONS.map((denomination) => ({
+      label: denomination.label,
+      value: denomination.value,
+      quantity: openingCashCounts[denomination.key] || 0,
+    }));
+
+    try {
+      const session = await openCashRegisterSession({
+        openingAmount: amount,
+        openingDenominations: entries,
+        notes: openingNote.trim() || "Apertura de caja",
+      });
+      sessionId = session.id;
+    } catch {
+      toast.warning("No se pudo sincronizar la apertura en la nube. Se guardará localmente.");
+    }
+
     const saved = registerCashOpening({
       amount,
       note: openingNote.trim() || "Apertura de caja",
+      sessionId,
+      denominations: entries,
     });
 
     setOpeningForCut(saved);
     setOpeningAmount("");
     setOpeningNote("");
+    setOpeningCashCounts(createInitialCounts());
     setCashOpeningOpen(false);
     toast.success(`Apertura registrada por ${formatCurrencyMXN(saved.amount)}`);
   };
@@ -358,6 +404,11 @@ export default function OrdersPage() {
     toast.success(
       `${cashMovementType === "ingreso" ? "Ingreso" : "Retiro"} registrado por ${formatCurrencyMXN(saved.amount)}`
     );
+  };
+
+  const setOpeningDenominationCount = (key: string, nextValue: number) => {
+    const safeValue = Number.isFinite(nextValue) && nextValue > 0 ? Math.floor(nextValue) : 0;
+    setOpeningCashCounts((prev) => ({ ...prev, [key]: safeValue }));
   };
 
   const setDenominationCount = (key: string, nextValue: number) => {
@@ -440,6 +491,22 @@ export default function OrdersPage() {
       .filter((sale) => sale.paymentMethod === "tarjeta")
       .reduce((sum, sale) => sum + sale.total, 0);
 
+    const activeSessionId = openingForCut.sessionId;
+    if (activeSessionId) {
+      try {
+        await closeCashRegisterSession({
+          sessionId: activeSessionId,
+          closingAmount: countedCash,
+          expectedAmount: expectedCashNet,
+          difference: cashDifference,
+          closingDenominations: entries,
+          notes: "Corte de caja",
+        });
+      } catch {
+        toast.warning("No se pudo sincronizar el cierre en la nube. Se guardará localmente.");
+      }
+    }
+
     const savedCut = registerCashCut({
       expectedCash: expectedCashNet,
       countedCash,
@@ -452,6 +519,7 @@ export default function OrdersPage() {
       withdrawalsTotal: totalWithdrawals,
       entries,
       note: "CORTE DE CAJA (HOY)",
+      sessionId: openingForCut.sessionId,
     });
 
     setCutsForToday(loadTodayCuts());
@@ -894,6 +962,9 @@ export default function OrdersPage() {
                 inputMode="decimal"
                 enterKeyHint="done"
               />
+              <p className="text-xs text-muted-foreground">
+                Total del tabulador: {formatCurrencyMXN(openingCountedCash)}
+              </p>
             </div>
             <div className="space-y-1">
               <label className="text-sm font-medium text-foreground">Nota</label>
@@ -902,6 +973,66 @@ export default function OrdersPage() {
                 onChange={(event) => setOpeningNote(event.target.value)}
                 placeholder="Fondo inicial"
               />
+            </div>
+            <div className="max-h-56 overflow-y-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Denominación</TableHead>
+                    <TableHead className="w-24 text-right">Cantidad</TableHead>
+                    <TableHead className="w-24 text-right">Subtotal</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {CASH_DENOMINATIONS.map((denomination) => {
+                    const quantity = openingCashCounts[denomination.key] || 0;
+                    const subtotal = denomination.value * quantity;
+                    return (
+                      <TableRow key={`open-${denomination.key}`}>
+                        <TableCell>{denomination.label}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-8 px-0"
+                              onClick={() => setOpeningDenominationCount(denomination.key, quantity - 1)}
+                            >
+                              -
+                            </Button>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={quantity}
+                              className="h-8 w-16 text-right"
+                              inputMode="numeric"
+                              enterKeyHint="done"
+                              onChange={(event) => {
+                                const raw = Number.parseInt(event.target.value || "0", 10);
+                                const next = Number.isNaN(raw) || raw < 0 ? 0 : raw;
+                                setOpeningDenominationCount(denomination.key, next);
+                              }}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 w-8 px-0"
+                              onClick={() => setOpeningDenominationCount(denomination.key, quantity + 1)}
+                            >
+                              +
+                            </Button>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrencyMXN(subtotal)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </div>
             <Button className="w-full" onClick={handleRegisterOpening}>
               Guardar apertura
