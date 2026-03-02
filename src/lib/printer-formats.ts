@@ -934,7 +934,7 @@ export async function printMultipleToDevice(
         if (attempt >= 2) {
           const message = error instanceof Error ? error.message : "Error desconocido de Bluetooth";
           throw new Error(
-            `No se pudo reconectar automáticamente a la impresora. Vincúlala desde el módulo de cobro (botón "Vincular impresora"). Detalle: ${message}`
+            `No se pudo reconectar automáticamente a la impresora. Vincúlala en Ajustes > Impresoras. Detalle: ${message}`
           );
         }
       }
