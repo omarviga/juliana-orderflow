@@ -130,7 +130,7 @@ export function generateClientTicketHTML(
           <style>
             * { box-sizing: border-box; }
             body { margin: 0; padding: 0; width: ${config.width}mm; font-family: 'Courier New', monospace; color: #000; }
-            .receipt { padding: 3mm; font-size: 10px; }
+            .receipt { padding: 0 0 3mm 0; font-size: 10px; }
             .center { text-align: center; }
             .title { font-size: 16px; font-weight: 700; letter-spacing: 1px; }
             .subtitle { font-size: 10px; font-weight: 700; margin-top: 1mm; }
@@ -173,7 +173,7 @@ export function generateClientTicketHTML(
         <style>
           * { box-sizing: border-box; }
           body { margin: 0; padding: 0; background: #fff; font-family: 'Trebuchet MS', 'Segoe UI', Arial, sans-serif; width: ${config.width}mm; color: #111; }
-          .receipt { width: 100%; padding: 3mm; }
+          .receipt { width: 100%; padding: 0 0 3mm 0; }
           .brand-top { border: 2px solid #000; border-radius: 8px; padding: 2.5mm 2mm; text-align: center; margin-bottom: 2mm; }
           .brand-logo { display: flex; justify-content: center; margin-bottom: 1.5mm; }
           .brand-logo img { width: 42mm; max-width: 100%; height: auto; }
@@ -953,6 +953,13 @@ export function generateClientTicketEscPos(
 ): number[] {
   const config = PRINTER_CONFIGS["80mm"];
   const safeCustomerName = (customerName || "").trim() || "Barra";
+  const normalizedPaymentLabel = (paymentMethodLabel || "").trim() || "Efectivo";
+  const cashDetailMatch = normalizedPaymentLabel.match(
+    /^efectivo\s*\(\s*([^\)\/]+?)\s*\/\s*cambio\s*([^\)]+?)\s*\)$/i
+  );
+  const paymentLabelForTicket = cashDetailMatch ? "Efectivo" : normalizedPaymentLabel;
+  const cashReceivedForTicket = cashDetailMatch?.[1]?.trim() || null;
+  const cashChangeForTicket = cashDetailMatch?.[2]?.trim() || null;
   const separator = "=".repeat(config.charsPerLine);
   const money = (value: number) => `$${value.toFixed(0)}`;
   const padRightAmount = (left: string, right: string) => {
@@ -1000,9 +1007,15 @@ export function generateClientTicketEscPos(
     ...BOLD_OFF,
     ...encode(padRightAmount("Pedido", `#${orderNumber || "---"}`)),
     ...encode(padRightAmount("Cliente", safeCustomerName)),
-    ...wrapLine(safeCustomerName, config.charsPerLine - 2).slice(1).flatMap((line) => encode(`  ${line}`)),
+    ...wrapLine(safeCustomerName, config.charsPerLine).slice(1).flatMap((line) => encode(line)),
     ...encode(padRightAmount("Fecha", dateStr)),
-    ...wrapLine(`Pago ${paymentMethodLabel}`, config.charsPerLine).flatMap((line) => encode(line)),
+    ...wrapLine(`Pago ${paymentLabelForTicket}`, config.charsPerLine).flatMap((line) => encode(line)),
+    ...(cashReceivedForTicket
+      ? wrapLine(`Recibido ${cashReceivedForTicket}`, config.charsPerLine).flatMap((line) => encode(line))
+      : []),
+    ...(cashChangeForTicket
+      ? wrapLine(`Cambio ${cashChangeForTicket}`, config.charsPerLine).flatMap((line) => encode(line))
+      : []),
     ...encode(separator),
     ...BOLD_ON,
     ...encode("CONSUMO"),
@@ -1023,7 +1036,7 @@ export function generateClientTicketEscPos(
     if (item.kitchenNote) detailLines.push(`Nota: ${item.kitchenNote}`);
     if (detailLines.length === 0) detailLines.push("Sin extras");
     detailLines.forEach((detail) => {
-      wrapLine(`  - ${detail}`, config.charsPerLine).forEach((line) => commands.push(...encode(line)));
+      wrapLine(`- ${detail}`, config.charsPerLine).forEach((line) => commands.push(...encode(line)));
     });
   });
 
