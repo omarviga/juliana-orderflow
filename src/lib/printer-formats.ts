@@ -631,6 +631,7 @@ const PRINTER_BT_SERVICE_UUID = "00001101-0000-1000-8000-00805f9b34fb";
 const FIXED_PRINTER_NAME = "glprinter";
 const FIXED_PREFERRED_BLUETOOTH_ADDRESS = "AB:0A:FA:8F:3C:AA";
 const AUTO_PRINTER_ADDRESS = "AUTO_PRINTER";
+const LAST_CONNECTED_BLUETOOTH_DEVICE_ID_KEY = "lastConnectedBluetoothDeviceId";
 const KNOWN_PRINTER_SERVICE_UUIDS = [
   PRINTER_BT_SERVICE_UUID,
   "0000ffe0-0000-1000-8000-00805f9b34fb",
@@ -716,6 +717,11 @@ async function resolveBluetoothDevice(
   const getDevices = navigator.bluetooth.getDevices?.bind(navigator.bluetooth);
   if (getDevices) {
     const pairedDevices = await getDevices();
+    const lastConnectedId = localStorage.getItem(LAST_CONNECTED_BLUETOOTH_DEVICE_ID_KEY)?.trim();
+    if (lastConnectedId) {
+      const lastKnown = pairedDevices.find((device) => device.id === lastConnectedId);
+      if (lastKnown) return lastKnown;
+    }
     const known = pairedDevices.find((device) => device.id === deviceAddress);
     if (known) return known;
     const glPrinter = pairedDevices.find((device) =>
@@ -838,6 +844,7 @@ async function resolveWritableCharacteristic(
     device,
     characteristic,
   };
+  localStorage.setItem(LAST_CONNECTED_BLUETOOTH_DEVICE_ID_KEY, device.id);
 
   return characteristic;
 }
@@ -927,7 +934,7 @@ export async function printMultipleToDevice(
         if (attempt >= 2) {
           const message = error instanceof Error ? error.message : "Error desconocido de Bluetooth";
           throw new Error(
-            `No se pudo reconectar automáticamente a la impresora. Vincúlala en Ajustes > Impresoras. Detalle: ${message}`
+            `No se pudo reconectar automáticamente a la impresora. Vincúlala desde el módulo de cobro (botón "Vincular impresora"). Detalle: ${message}`
           );
         }
       }

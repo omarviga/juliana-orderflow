@@ -153,7 +153,7 @@ export function useBluetootPrinter() {
     };
 
     runKeepAlive();
-    const intervalId = window.setInterval(runKeepAlive, 25000);
+    const intervalId = window.setInterval(runKeepAlive, 12000);
     window.addEventListener("focus", runKeepAlive);
     document.addEventListener("visibilitychange", runKeepAlive);
 

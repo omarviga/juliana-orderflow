@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import type { CartItem } from "@/types/pos";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Printer, Loader2 } from "lucide-react";
+import { Printer, Loader2, Bluetooth } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useBluetootPrinter } from "@/hooks/useBluetootPrinter";
 import {
@@ -63,6 +63,7 @@ export function PaymentModal({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
   const [cashReceivedInput, setCashReceivedInput] = useState("");
   const [isAutoPrinting, setIsAutoPrinting] = useState(false);
+  const [isLinkingPrinter, setIsLinkingPrinter] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [allowManualNameInput, setAllowManualNameInput] = useState(false);
   const printer = useBluetootPrinter();
@@ -263,7 +264,7 @@ export function PaymentModal({
           await printCombinedTickets(order.order_number, normalizedCustomerName);
         } catch (err) {
           console.error("Error en impresión automática:", err);
-          toast.warning("No se pudo imprimir automáticamente");
+          toast.warning(`No se pudo imprimir automáticamente: ${getErrorMessage(err)}`);
         } finally {
           setIsAutoPrinting(false);
         }
@@ -298,9 +299,23 @@ export function PaymentModal({
       await printCombinedTickets(savedOrderNumber, customerName);
     } catch (err) {
       console.error("Error al imprimir:", err);
-      toast.error("Error al imprimir");
+      toast.error(`Error al imprimir: ${getErrorMessage(err)}`);
     } finally {
       setIsAutoPrinting(false);
+    }
+  };
+
+  const selectedPrinter = printer.getClientPrinter();
+
+  const handleLinkPrinter = async () => {
+    setIsLinkingPrinter(true);
+    try {
+      const linkedPrinter = await printer.selectClientPrinter();
+      toast.success(`Impresora vinculada: ${linkedPrinter.name}`);
+    } catch (error) {
+      toast.error(`No se pudo vincular la impresora: ${getErrorMessage(error)}`);
+    } finally {
+      setIsLinkingPrinter(false);
     }
   };
 
@@ -446,13 +461,40 @@ export function PaymentModal({
         </div>
 
         {!savedOrderNumber ? (
-          <Button
-            onClick={handlePay}
-            disabled={saving || (paymentMethod === "efectivo" && (isCashMissing || cashReceived < total))}
-            className="w-full"
-          >
-            {saving ? "Guardando..." : "Confirmar Pago"}
-          </Button>
+          <div className="space-y-3">
+            <div className="rounded-md border p-3 text-xs text-muted-foreground">
+              <div className="flex items-center justify-between gap-2">
+                <span>
+                  Impresora actual:{" "}
+                  <span className="font-medium text-foreground">
+                    {selectedPrinter?.name || "Sin vincular"}
+                  </span>
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  onClick={handleLinkPrinter}
+                  disabled={isLinkingPrinter}
+                >
+                  {isLinkingPrinter ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Bluetooth className="h-4 w-4" />
+                  )}
+                  Vincular
+                </Button>
+              </div>
+            </div>
+            <Button
+              onClick={handlePay}
+              disabled={saving || (paymentMethod === "efectivo" && (isCashMissing || cashReceived < total))}
+              className="w-full"
+            >
+              {saving ? "Guardando..." : "Confirmar Pago"}
+            </Button>
+          </div>
         ) : (
           <div className="space-y-3">
             {isAutoPrinting && (
@@ -471,6 +513,20 @@ export function PaymentModal({
                 <Printer className="h-4 w-4" /> Cocina + Ticket
               </Button>
             </div>
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full gap-1"
+              onClick={handleLinkPrinter}
+              disabled={isLinkingPrinter}
+            >
+              {isLinkingPrinter ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Bluetooth className="h-4 w-4" />
+              )}
+              {selectedPrinter ? `Re-vincular (${selectedPrinter.name})` : "Vincular impresora"}
+            </Button>
           </div>
         )}
       </DialogContent>
