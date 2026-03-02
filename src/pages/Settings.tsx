@@ -43,6 +43,7 @@ export default function SettingsPage() {
     preferences,
     savePreferences,
     getClientPrinter,
+    selectClientPrinter,
   } = useBluetootPrinter();
 
   const [localSettings, setLocalSettings] = useState(settings);
@@ -56,7 +57,25 @@ export default function SettingsPage() {
   const [newProductCategoryId, setNewProductCategoryId] = useState<string>("");
   const [priceDraftByProductId, setPriceDraftByProductId] = useState<Record<string, string>>({});
   const [isSavingMenu, setIsSavingMenu] = useState(false);
+  const [isLinkingPrinter, setIsLinkingPrinter] = useState(false);
   const selectedClientPrinter = getClientPrinter();
+  const availablePrinters = useMemo(
+    () => Object.values(preferences.printers || {}),
+    [preferences.printers]
+  );
+
+  const handleLinkClientPrinter = async () => {
+    setIsLinkingPrinter(true);
+    try {
+      const printer = await selectClientPrinter();
+      toast.success(`Impresora vinculada: ${printer.name}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo vincular la impresora";
+      toast.error(message);
+    } finally {
+      setIsLinkingPrinter(false);
+    }
+  };
 
   const uniqueProducts = useMemo(() => {
     const uniqueByCategoryAndName = new Map<string, (typeof products)[number]>();
@@ -847,20 +866,49 @@ export default function SettingsPage() {
                   Impresora Cliente (80mm)
                 </CardTitle>
                 <CardDescription>
-                  Configuración automática (sin selección manual)
+                  Vincula y guarda una impresora para reconexión automática
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="rounded-lg bg-muted/30 p-4">
                   <p className="mb-2 text-sm font-medium text-foreground">
-                    ✓ Automática
+                    {selectedClientPrinter ? "✓ Guardada" : "Pendiente"}
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {selectedClientPrinter
-                      ? `${selectedClientPrinter.name}`
-                      : "El sistema detectará la impresora disponible automáticamente"}
+                      ? `${selectedClientPrinter.name} (${selectedClientPrinter.address})`
+                      : "Vincula una impresora Bluetooth para evitar búsquedas en cada impresión"}
                   </p>
                 </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="client-printer-select">Impresora guardada</Label>
+                  <Select
+                    value={preferences.clientPrinterId || "AUTO_PRINTER"}
+                    onValueChange={(value) =>
+                      savePreferences({
+                        ...preferences,
+                        clientPrinterId: value,
+                      })
+                    }
+                  >
+                    <SelectTrigger id="client-printer-select">
+                      <SelectValue placeholder="Selecciona impresora" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availablePrinters.map((printer) => (
+                        <SelectItem key={printer.id} value={printer.id}>
+                          {printer.name} ({printer.address})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Button onClick={handleLinkClientPrinter} disabled={isLinkingPrinter} className="gap-2">
+                  <Bluetooth className="h-4 w-4" />
+                  {isLinkingPrinter ? "Vinculando..." : "Vincular / Cambiar impresora"}
+                </Button>
               </CardContent>
             </Card>
 

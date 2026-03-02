@@ -74,6 +74,19 @@ const normalizeText = (value: string) =>
 const getDisplayProductName = (name: string) =>
   STANDALONE_EXTRA_PRODUCT_NAMES.has(normalizeText(name)) ? "Extra" : name;
 
+function isDuplicatedCustomizationLabel(customLabel: string, hasCustomizations: boolean): boolean {
+  const normalized = normalizeText(customLabel);
+  if (!normalized || normalized === "SIN EXTRAS") return true;
+  if (!hasCustomizations) return false;
+  return (
+    normalized.startsWith("EXTRAS:") ||
+    normalized.startsWith("ANADIDO DE MAS:") ||
+    normalized.startsWith("ANADIDO DE MAS :") ||
+    normalized.startsWith("ANADIDO:") ||
+    normalized.startsWith("AGREGADO:")
+  );
+}
+
 function toEscPosSafeText(value: string): string {
   return value
     .replace(/\r\n/g, "\n")
@@ -552,7 +565,7 @@ export function generateKitchenOrderHTML(
     }
 
     // Mostrar instrucciones personalizadas
-    if (item.customLabel) {
+    if (item.customLabel && !isDuplicatedCustomizationLabel(item.customLabel, (item.customizations || []).length > 0)) {
       html += `<div class="ingredient" style="margin-top: 0.5mm; font-style: italic; color: #000;">📝 ${item.customLabel}</div>`;
     }
 
@@ -1307,7 +1320,9 @@ export function generateKitchenOrderEscPos(
 
     const details = [
       ...(item.customizations || []).map((c) => c.ingredient.name),
-      ...(item.customLabel ? [`NOTA: ${item.customLabel}`] : []),
+      ...(item.customLabel && !isDuplicatedCustomizationLabel(item.customLabel, (item.customizations || []).length > 0)
+        ? [`NOTA: ${item.customLabel}`]
+        : []),
       ...(item.kitchenNote ? [`OBS: ${item.kitchenNote}`] : []),
     ];
 
