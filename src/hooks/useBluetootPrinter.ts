@@ -15,6 +15,8 @@ import type { CashRegisterSale } from "@/lib/cash-register";
 
 const STORAGE_KEY = "printerPreferences";
 const AUTO_PRINTER_ID = "AUTO_PRINTER";
+const FIXED_PRINTER_ID = "FIXED_GL_PRINTER";
+const FIXED_PRINTER_ADDRESS = "AB:0A:FA:8F:3C:AA";
 const AUTO_PRINTER: PrinterDevice = {
   id: AUTO_PRINTER_ID,
   address: AUTO_PRINTER_ID,
@@ -22,12 +24,20 @@ const AUTO_PRINTER: PrinterDevice = {
   type: "80mm",
   status: "connected",
 };
+const FIXED_PRINTER: PrinterDevice = {
+  id: FIXED_PRINTER_ID,
+  address: FIXED_PRINTER_ADDRESS,
+  name: "GL Printer fija",
+  type: "80mm",
+  status: "connected",
+};
 
 const DEFAULT_PREFERENCES: PrinterPreferences = {
   printers: {
     [AUTO_PRINTER_ID]: AUTO_PRINTER,
+    [FIXED_PRINTER_ID]: FIXED_PRINTER,
   },
-  clientPrinterId: AUTO_PRINTER_ID,
+  clientPrinterId: FIXED_PRINTER_ID,
   autoPrint: true,
   openDrawerOn80mm: true,
   fullCutOn80mm: true,
@@ -37,6 +47,7 @@ function normalizePreferences(input?: Partial<PrinterPreferences>): PrinterPrefe
   const printersInput = input?.printers && typeof input.printers === "object" ? input.printers : {};
   const printers = {
     [AUTO_PRINTER_ID]: AUTO_PRINTER,
+    [FIXED_PRINTER_ID]: FIXED_PRINTER,
     ...printersInput,
   };
   const ids = Object.keys(printers);

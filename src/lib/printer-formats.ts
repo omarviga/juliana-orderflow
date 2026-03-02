@@ -74,10 +74,19 @@ const normalizeText = (value: string) =>
 const getDisplayProductName = (name: string) =>
   STANDALONE_EXTRA_PRODUCT_NAMES.has(normalizeText(name)) ? "Extra" : name;
 
-function isDuplicatedCustomizationLabel(customLabel: string, hasCustomizations: boolean): boolean {
+function isDuplicatedCustomizationLabel(
+  customLabel: string,
+  customizations: Array<{ ingredient: { name: string } }>
+): boolean {
   const normalized = normalizeText(customLabel);
   if (!normalized || normalized === "SIN EXTRAS") return true;
+  const hasCustomizations = customizations.length > 0;
   if (!hasCustomizations) return false;
+  const matchedCustomizationNames = customizations.filter((entry) =>
+    normalized.includes(normalizeText(entry.ingredient.name))
+  ).length;
+  if (matchedCustomizationNames >= 2) return true;
+  if (customizations.length > 0 && matchedCustomizationNames / customizations.length >= 0.5) return true;
   return (
     normalized.startsWith("EXTRAS:") ||
     normalized.startsWith("ANADIDO DE MAS:") ||
@@ -565,7 +574,7 @@ export function generateKitchenOrderHTML(
     }
 
     // Mostrar instrucciones personalizadas
-    if (item.customLabel && !isDuplicatedCustomizationLabel(item.customLabel, (item.customizations || []).length > 0)) {
+    if (item.customLabel && !isDuplicatedCustomizationLabel(item.customLabel, item.customizations || [])) {
       html += `<div class="ingredient" style="margin-top: 0.5mm; font-style: italic; color: #000;">📝 ${item.customLabel}</div>`;
     }
 
@@ -620,6 +629,7 @@ export async function printToDevice(
 
 const PRINTER_BT_SERVICE_UUID = "00001101-0000-1000-8000-00805f9b34fb";
 const FIXED_PRINTER_NAME = "glprinter";
+const FIXED_PREFERRED_BLUETOOTH_ADDRESS = "AB:0A:FA:8F:3C:AA";
 const AUTO_PRINTER_ADDRESS = "AUTO_PRINTER";
 const KNOWN_PRINTER_SERVICE_UUIDS = [
   PRINTER_BT_SERVICE_UUID,
@@ -638,6 +648,10 @@ const KNOWN_PRINTER_CHARACTERISTIC_UUIDS = [
 
 function normalizeUuid(uuid: string): string {
   return uuid.toLowerCase();
+}
+
+function normalizeBluetoothAddress(value: string): string {
+  return value.trim().toUpperCase().replace(/-/g, ":");
 }
 
 type ActiveBluetoothSession = {
@@ -697,6 +711,8 @@ async function resolveBluetoothDevice(
   options?: { allowPrompt?: boolean }
 ): Promise<BluetoothDevice> {
   const allowPrompt = options?.allowPrompt !== false;
+  const normalizedTargetAddress = normalizeBluetoothAddress(deviceAddress);
+  const hasFixedAddressTarget = normalizedTargetAddress === normalizeBluetoothAddress(FIXED_PREFERRED_BLUETOOTH_ADDRESS);
   const getDevices = navigator.bluetooth.getDevices?.bind(navigator.bluetooth);
   if (getDevices) {
     const pairedDevices = await getDevices();
@@ -706,6 +722,10 @@ async function resolveBluetoothDevice(
       (device.name || "").toLowerCase().includes(FIXED_PRINTER_NAME)
     );
     if (glPrinter) return glPrinter;
+    if (hasFixedAddressTarget && pairedDevices.length > 0) {
+      // En Web Bluetooth no siempre existe MAC visible; usar primer dispositivo ya vinculado.
+      return pairedDevices[0];
+    }
     if (deviceAddress === AUTO_PRINTER_ADDRESS && pairedDevices.length > 0) {
       return pairedDevices[0];
     }
@@ -877,7 +897,7 @@ export async function printMultipleToDevice(
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
         const characteristic = await withTimeout(
-          resolveWritableCharacteristic(deviceAddress),
+          resolveWritableCharacteristic(deviceAddress, { allowPrompt: false }),
           15000,
           "Conexion a impresora"
         );
@@ -905,7 +925,10 @@ export async function printMultipleToDevice(
         resetActiveBluetoothSession();
         console.error(`Error de impresión (intento ${attempt}/2):`, error);
         if (attempt >= 2) {
-          throw error;
+          const message = error instanceof Error ? error.message : "Error desconocido de Bluetooth";
+          throw new Error(
+            `No se pudo reconectar automáticamente a la impresora. Vincúlala en Ajustes > Impresoras. Detalle: ${message}`
+          );
         }
       }
     }
@@ -1320,7 +1343,7 @@ export function generateKitchenOrderEscPos(
 
     const details = [
       ...(item.customizations || []).map((c) => c.ingredient.name),
-      ...(item.customLabel && !isDuplicatedCustomizationLabel(item.customLabel, (item.customizations || []).length > 0)
+      ...(item.customLabel && !isDuplicatedCustomizationLabel(item.customLabel, item.customizations || [])
         ? [`NOTA: ${item.customLabel}`]
         : []),
       ...(item.kitchenNote ? [`OBS: ${item.kitchenNote}`] : []),
