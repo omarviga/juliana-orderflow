@@ -634,9 +634,49 @@ type ActiveBluetoothSession = {
 };
 
 let activeBluetoothSession: ActiveBluetoothSession | null = null;
+let bluetoothOperationQueue: Promise<void> = Promise.resolve();
+
+function queueBluetoothOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const next = bluetoothOperationQueue.then(operation, operation);
+  bluetoothOperationQueue = next.then(
+    () => undefined,
+    () => undefined
+  );
+  return next;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`${label} excedio ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      }
+    );
+  });
+}
 
 function clearActiveBluetoothSession(): void {
   activeBluetoothSession = null;
+}
+
+function resetActiveBluetoothSession(): void {
+  if (activeBluetoothSession?.device.gatt?.connected) {
+    try {
+      activeBluetoothSession.device.gatt.disconnect();
+    } catch {
+      // Ignorar errores al forzar desconexion.
+    }
+  }
+  clearActiveBluetoothSession();
 }
 
 async function resolveBluetoothDevice(
@@ -773,7 +813,13 @@ export async function keepBluetoothPrinterAlive(deviceAddress: string): Promise<
   if (typeof navigator === "undefined" || !navigator.bluetooth) return;
 
   try {
-    await resolveWritableCharacteristic(deviceAddress, { allowPrompt: false });
+    await queueBluetoothOperation(async () => {
+      await withTimeout(
+        resolveWritableCharacteristic(deviceAddress, { allowPrompt: false }),
+        12000,
+        "Reconexión Bluetooth"
+      );
+    });
   } catch {
     // Silencioso: el flujo de impresión normal intentará reconectar con prompt si hace falta.
   }
@@ -814,33 +860,43 @@ export async function printMultipleToDevice(
   const finalPrintData = [...initSequence, ...printData];
   console.log("Enviando", finalPrintData.length, "bytes a la impresora");
 
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    try {
-      const characteristic = await resolveWritableCharacteristic(deviceAddress);
-      const chunkSize = characteristic.properties.writeWithoutResponse ? 120 : 180;
-      for (let i = 0; i < finalPrintData.length; i += chunkSize) {
-        const chunk = finalPrintData.slice(i, Math.min(i + chunkSize, finalPrintData.length));
-        const buffer = new Uint8Array(chunk);
+  await queueBluetoothOperation(async () => {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const characteristic = await withTimeout(
+          resolveWritableCharacteristic(deviceAddress),
+          15000,
+          "Conexion a impresora"
+        );
+        const chunkSize = characteristic.properties.writeWithoutResponse ? 120 : 180;
+        for (let i = 0; i < finalPrintData.length; i += chunkSize) {
+          const chunk = finalPrintData.slice(i, Math.min(i + chunkSize, finalPrintData.length));
+          const buffer = new Uint8Array(chunk);
 
-        if (characteristic.properties.writeWithoutResponse) {
-          await characteristic.writeValueWithoutResponse(buffer);
-        } else {
-          await characteristic.writeValue(buffer);
+          if (characteristic.properties.writeWithoutResponse) {
+            await withTimeout(
+              characteristic.writeValueWithoutResponse(buffer),
+              5000,
+              "Envio de datos a impresora"
+            );
+          } else {
+            await withTimeout(characteristic.writeValue(buffer), 5000, "Envio de datos a impresora");
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 60));
         }
 
-        await new Promise((resolve) => setTimeout(resolve, 60));
-      }
-
-      console.log("Datos enviados exitosamente");
-      return;
-    } catch (error) {
-      clearActiveBluetoothSession();
-      console.error(`Error de impresión (intento ${attempt}/2):`, error);
-      if (attempt >= 2) {
-        throw error;
+        console.log("Datos enviados exitosamente");
+        return;
+      } catch (error) {
+        resetActiveBluetoothSession();
+        console.error(`Error de impresión (intento ${attempt}/2):`, error);
+        if (attempt >= 2) {
+          throw error;
+        }
       }
     }
-  }
+  });
 }
 
 /**
