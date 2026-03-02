@@ -96,6 +96,27 @@ function isDuplicatedCustomizationLabel(
   );
 }
 
+function normalizeKitchenDetail(value: string): string {
+  return normalizeText(value)
+    .replace(/^(NOTA COCINA|NOTA|OBS|OBSERVACION|OBSERVACIONES)\s*[:\-]?\s*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function dedupeKitchenDetails(details: string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+
+  details.forEach((detail) => {
+    const key = normalizeKitchenDetail(detail);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    unique.push(detail);
+  });
+
+  return unique;
+}
+
 function toEscPosSafeText(value: string): string {
   return value
     .replace(/\r\n/g, "\n")
@@ -631,7 +652,6 @@ const PRINTER_BT_SERVICE_UUID = "00001101-0000-1000-8000-00805f9b34fb";
 const FIXED_PRINTER_NAME = "glprinter";
 const FIXED_PREFERRED_BLUETOOTH_ADDRESS = "AB:0A:FA:8F:3C:AA";
 const AUTO_PRINTER_ADDRESS = "AUTO_PRINTER";
-const LAST_CONNECTED_BLUETOOTH_DEVICE_ID_KEY = "lastConnectedBluetoothDeviceId";
 const KNOWN_PRINTER_SERVICE_UUIDS = [
   PRINTER_BT_SERVICE_UUID,
   "0000ffe0-0000-1000-8000-00805f9b34fb",
@@ -707,40 +727,8 @@ function resetActiveBluetoothSession(): void {
   clearActiveBluetoothSession();
 }
 
-async function resolveBluetoothDevice(
-  deviceAddress: string,
-  options?: { allowPrompt?: boolean }
-): Promise<BluetoothDevice> {
-  const allowPrompt = options?.allowPrompt !== false;
-  const normalizedTargetAddress = normalizeBluetoothAddress(deviceAddress);
-  const hasFixedAddressTarget = normalizedTargetAddress === normalizeBluetoothAddress(FIXED_PREFERRED_BLUETOOTH_ADDRESS);
-  const getDevices = navigator.bluetooth.getDevices?.bind(navigator.bluetooth);
-  if (getDevices) {
-    const pairedDevices = await getDevices();
-    const lastConnectedId = localStorage.getItem(LAST_CONNECTED_BLUETOOTH_DEVICE_ID_KEY)?.trim();
-    if (lastConnectedId) {
-      const lastKnown = pairedDevices.find((device) => device.id === lastConnectedId);
-      if (lastKnown) return lastKnown;
-    }
-    const known = pairedDevices.find((device) => device.id === deviceAddress);
-    if (known) return known;
-    const glPrinter = pairedDevices.find((device) =>
-      (device.name || "").toLowerCase().includes(FIXED_PRINTER_NAME)
-    );
-    if (glPrinter) return glPrinter;
-    if (hasFixedAddressTarget && pairedDevices.length > 0) {
-      // En Web Bluetooth no siempre existe MAC visible; usar primer dispositivo ya vinculado.
-      return pairedDevices[0];
-    }
-    if (deviceAddress === AUTO_PRINTER_ADDRESS && pairedDevices.length > 0) {
-      return pairedDevices[0];
-    }
-  }
-
-  if (!allowPrompt) {
-    throw new Error("No hay impresora vinculada para reconexión silenciosa.");
-  }
-
+async function resolveBluetoothDevice(deviceAddress: string): Promise<BluetoothDevice> {
+  void deviceAddress;
   try {
     return await navigator.bluetooth.requestDevice({
       filters: [{ namePrefix: "GL" }],
@@ -754,10 +742,7 @@ async function resolveBluetoothDevice(
   }
 }
 
-async function resolveWritableCharacteristic(
-  deviceAddress: string,
-  options?: { allowPrompt?: boolean }
-): Promise<BluetoothRemoteGATTCharacteristic> {
+async function resolveWritableCharacteristic(deviceAddress: string): Promise<BluetoothRemoteGATTCharacteristic> {
   // Reusar sesión activa para evitar prompts de sincronización en cada impresión.
   if (
     activeBluetoothSession &&
@@ -767,7 +752,7 @@ async function resolveWritableCharacteristic(
     return activeBluetoothSession.characteristic;
   }
 
-  const device = await resolveBluetoothDevice(deviceAddress, options);
+  const device = await resolveBluetoothDevice(deviceAddress);
   const server = device.gatt?.connected ? device.gatt : await device.gatt?.connect();
   if (!server) {
     throw new Error("No se pudo conectar a GATT server");
@@ -844,25 +829,8 @@ async function resolveWritableCharacteristic(
     device,
     characteristic,
   };
-  localStorage.setItem(LAST_CONNECTED_BLUETOOTH_DEVICE_ID_KEY, device.id);
 
   return characteristic;
-}
-
-export async function keepBluetoothPrinterAlive(deviceAddress: string): Promise<void> {
-  if (typeof navigator === "undefined" || !navigator.bluetooth) return;
-
-  try {
-    await queueBluetoothOperation(async () => {
-      await withTimeout(
-        resolveWritableCharacteristic(deviceAddress, { allowPrompt: false }),
-        12000,
-        "Reconexión Bluetooth"
-      );
-    });
-  } catch {
-    // Silencioso: el flujo de impresión normal intentará reconectar con prompt si hace falta.
-  }
 }
 
 export async function printMultipleToDevice(
@@ -901,43 +869,36 @@ export async function printMultipleToDevice(
   console.log("Enviando", finalPrintData.length, "bytes a la impresora");
 
   await queueBluetoothOperation(async () => {
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
-      try {
-        const characteristic = await withTimeout(
-          resolveWritableCharacteristic(deviceAddress, { allowPrompt: false }),
-          15000,
-          "Conexion a impresora"
-        );
-        const chunkSize = characteristic.properties.writeWithoutResponse ? 120 : 180;
-        for (let i = 0; i < finalPrintData.length; i += chunkSize) {
-          const chunk = finalPrintData.slice(i, Math.min(i + chunkSize, finalPrintData.length));
-          const buffer = new Uint8Array(chunk);
+    try {
+      const characteristic = await withTimeout(
+        resolveWritableCharacteristic(deviceAddress),
+        15000,
+        "Conexion a impresora"
+      );
+      const chunkSize = characteristic.properties.writeWithoutResponse ? 120 : 180;
+      for (let i = 0; i < finalPrintData.length; i += chunkSize) {
+        const chunk = finalPrintData.slice(i, Math.min(i + chunkSize, finalPrintData.length));
+        const buffer = new Uint8Array(chunk);
 
-          if (characteristic.properties.writeWithoutResponse) {
-            await withTimeout(
-              characteristic.writeValueWithoutResponse(buffer),
-              5000,
-              "Envio de datos a impresora"
-            );
-          } else {
-            await withTimeout(characteristic.writeValue(buffer), 5000, "Envio de datos a impresora");
-          }
-
-          await new Promise((resolve) => setTimeout(resolve, 60));
-        }
-
-        console.log("Datos enviados exitosamente");
-        return;
-      } catch (error) {
-        resetActiveBluetoothSession();
-        console.error(`Error de impresión (intento ${attempt}/2):`, error);
-        if (attempt >= 2) {
-          const message = error instanceof Error ? error.message : "Error desconocido de Bluetooth";
-          throw new Error(
-            `No se pudo reconectar automáticamente a la impresora. Vincúlala en Ajustes > Impresoras. Detalle: ${message}`
+        if (characteristic.properties.writeWithoutResponse) {
+          await withTimeout(
+            characteristic.writeValueWithoutResponse(buffer),
+            5000,
+            "Envio de datos a impresora"
           );
+        } else {
+          await withTimeout(characteristic.writeValue(buffer), 5000, "Envio de datos a impresora");
         }
+
+        await new Promise((resolve) => setTimeout(resolve, 60));
       }
+
+      console.log("Datos enviados exitosamente");
+      return;
+    } catch (error) {
+      resetActiveBluetoothSession();
+      const message = error instanceof Error ? error.message : "Error desconocido de Bluetooth";
+      throw new Error(`No se pudo conectar a la impresora. Selecciónala de nuevo. Detalle: ${message}`);
     }
   });
 }
@@ -1348,13 +1309,13 @@ export function generateKitchenOrderEscPos(
       ...BOLD_OFF
     );
 
-    const details = [
+    const details = dedupeKitchenDetails([
       ...(item.customizations || []).map((c) => c.ingredient.name),
       ...(item.customLabel && !isDuplicatedCustomizationLabel(item.customLabel, item.customizations || [])
         ? [`NOTA: ${item.customLabel}`]
         : []),
       ...(item.kitchenNote ? [`OBS: ${item.kitchenNote}`] : []),
-    ];
+    ]);
 
     if (details.length > 0) {
       details.forEach((detail) => commands.push(...encode(`  • ${detail}`)));

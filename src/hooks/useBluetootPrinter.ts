@@ -6,7 +6,6 @@ import {
   generateCashCutTicketEscPos,
   generateClientTicketEscPos,
   generateKitchenOrderEscPos,
-  keepBluetoothPrinterAlive,
   printMultipleToDevice,
 } from "@/lib/printer-formats";
 import type { PrinterDevice, PrinterPreferences } from "@/types/printer";
@@ -143,26 +142,6 @@ export function useBluetootPrinter() {
     if (!preferences.clientPrinterId) return null;
     return preferences.printers[preferences.clientPrinterId] || AUTO_PRINTER;
   }, [preferences.clientPrinterId, preferences.printers]);
-
-  useEffect(() => {
-    const printerAddress = getClientPrinter()?.address;
-    if (!printerAddress) return;
-
-    const runKeepAlive = () => {
-      void keepBluetoothPrinterAlive(printerAddress);
-    };
-
-    runKeepAlive();
-    const intervalId = window.setInterval(runKeepAlive, 12000);
-    window.addEventListener("focus", runKeepAlive);
-    document.addEventListener("visibilitychange", runKeepAlive);
-
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener("focus", runKeepAlive);
-      document.removeEventListener("visibilitychange", runKeepAlive);
-    };
-  }, [getClientPrinter, preferences.clientPrinterId]);
 
   const selectClientPrinter = useCallback(async (): Promise<PrinterDevice> => {
     if (typeof navigator === "undefined" || !navigator.bluetooth?.requestDevice) {
